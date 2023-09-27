@@ -1,0 +1,13 @@
+[package]
+name = "eth-indexer"
+version = "0.1.0"
+edition = "2018"
+description = "Ethereum Indexer"
+
+[dependencies]
+dotenv = "0.15.0"
+postgres = "0.19.7"
+tokio-postgres = "0.7.1"
+ethers = { version = "2.0.10", features = ["abigen", "ws", "rustls"] }
+tokio = { version = "1.32", features = ["full"] }
+eyre = "0.6.8"
