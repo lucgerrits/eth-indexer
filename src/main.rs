@@ -43,7 +43,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "BATCH_SIZE",
         "START_BLOCK",
         "END_BLOCK",
-        "UPDATE_ORDER"
     ];
 
     for env_var in env_vars {
