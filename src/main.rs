@@ -7,7 +7,7 @@ use dotenv::dotenv;
 use ethers::prelude::*;
 use std::{env, sync::Arc};
 use env_logger::Env;
-mod blocks;
+mod indexer;
 mod db;
 mod rpc;
 
@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Get the latest block number
-    let last_block = blocks::get_latest_block(ws_client.clone()).await?;
+    let last_block = indexer::get_latest_block(ws_client.clone()).await?;
     println!("Latest block number: {}", last_block);
 
     // if START_BLOCK is set, use that as the start block
@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Starting indexing from block {} to {}", start_block, end_block);
 
-    match blocks::index_blocks(U64::from(start_block), U64::from(end_block), ws_client.clone(), db_pool.clone()).await {
+    match indexer::index_blocks(U64::from(start_block), U64::from(end_block), ws_client.clone(), db_pool.clone()).await {
         Ok(_) => println!("Indexing complete!"),
         Err(e) => eprintln!("Error indexing blocks: {:?}", e),
     }
