@@ -41,6 +41,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "POSTGRES_DB",
         "POSTGRES_CREATE_TABLE_ORDER",
         "BATCH_SIZE",
+        "START_BLOCK",
+        "END_BLOCK",
+        "UPDATE_ORDER"
     ];
 
     for env_var in env_vars {
@@ -65,9 +68,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let last_block = blocks::get_latest_block(ws_client.clone()).await?;
     println!("Latest block number: {}", last_block);
 
-    println!("Starting indexing from block {} to {}", 0, last_block);
+    // if START_BLOCK is set, use that as the start block
+    let start_block = U64::from(
+        env::var("START_BLOCK")
+            .unwrap_or_else(|_| "0".to_string())
+            .parse::<u64>()
+            .unwrap_or(0),
+    );
+    // if END_BLOCK is set and different then -1, use that as the end block
+    let end_block = U64::from(
+        env::var("END_BLOCK")
+            .unwrap_or_else(|_| "-1".to_string())
+            .parse::<u64>()
+            .unwrap_or(last_block.as_u64()),
+    );
 
-    match blocks::index_blocks(U64::from(0), last_block, ws_client.clone(), db_pool.clone()).await {
+    println!("Starting indexing from block {} to {}", start_block, end_block);
+
+    match blocks::index_blocks(U64::from(start_block), U64::from(end_block), ws_client.clone(), db_pool.clone()).await {
         Ok(_) => println!("Indexing complete!"),
         Err(e) => eprintln!("Error indexing blocks: {:?}", e),
     }
