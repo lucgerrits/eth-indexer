@@ -221,15 +221,17 @@ async fn index_transaction(
                 Ok(Some(transaction_receipt)) => {
                     // Index transaction receipt
                     if let Err(e) =
-                        db::insert_transaction_receipt(transaction_receipt.clone(), db_pool.clone()).await
+                        db::insert_transaction_receipt(transaction_receipt.clone(), db_pool.clone())
+                            .await
                     {
                         let error_message =
                             format!("Error inserting transaction receipt into database: {:?}", e);
                         eprintln!("{}", error_message);
                         return Err(error_message); // Return the error message
                     }
-                    // Index the contract address
+                    // Index the contract
                     if let Some(contract_address) = transaction_receipt.contract_address {
+                        // Index the contract address
                         if let Err(e) = index_address(
                             contract_address,
                             transaction.block_number.unwrap(),
@@ -238,7 +240,19 @@ async fn index_transaction(
                         )
                         .await
                         {
-                            let error_message = format!("Error indexing address: {:?}", e);
+                            let error_message = format!("Error indexing contract address: {:?}", e);
+                            eprintln!("{}", error_message);
+                            return Err(error_message); // Return the error message
+                        }
+                        // Index the smart contract (code and verified source code)
+                        if let Err(e) = index_smart_contract(
+                            transaction_receipt.clone(),
+                            ws_client.clone(),
+                            db_pool.clone(),
+                        )
+                        .await
+                        {
+                            let error_message = format!("Error indexing smart contract code: {:?}", e);
                             eprintln!("{}", error_message);
                             return Err(error_message); // Return the error message
                         }
@@ -326,6 +340,54 @@ async fn index_address(
         code,
         block_number.clone(),
         U256::from(0), //TODO: fix this
+        db_pool.clone(),
+    )
+    .await
+    {
+        let error_message = format!("Error indexing transactions: {:?}", e);
+        eprintln!("{}", error_message);
+    }
+    Ok(())
+}
+
+/// Index smart contract
+/// We have to:
+/// - get the code of the address
+/// - Get the verified source code of the contract
+async fn index_smart_contract(
+    transaction_receipt: TransactionReceipt,
+    ws_client: Arc<Provider<Ws>>,
+    db_pool: Pool<PostgresConnectionManager<NoTls>>,
+) -> Result<(), String> {
+    // Get the code of the address (if it is a contract)
+    let code = match ws_client
+        .get_code(transaction_receipt.contract_address.unwrap(), None)
+        .await
+    {
+        Ok(code) => code,
+        Err(_e) => {
+            // eprintln!("Error getting code for address {}: {}", address, _e);
+            // return Err(_e.to_string());
+            Bytes::new() //it is possible that the address is not a contract
+        }
+    };
+
+    // Get the verified source code of the contract
+    // TODO: get the verified source code using blockscout API
+    // let verified_source_code = serde_json::json!(
+    //     "
+    //     {
+
+    //     }
+    //     "
+    // );
+    let verified_source_code = serde_json::json!({});
+
+    // Insert the address into the database
+    if let Err(e) = db::insert_smart_contract(
+        transaction_receipt,
+        code,
+        verified_source_code,
         db_pool.clone(),
     )
     .await
