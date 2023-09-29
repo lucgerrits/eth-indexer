@@ -7,6 +7,7 @@ use serde_json;
 use std::error::Error;
 use tokio_postgres::{types::ToSql, NoTls};
 
+use super::tokens;
 
 /// Function to insert smart contract information into the database
 /// Database schema:
@@ -46,16 +47,13 @@ pub async fn insert_smart_contract(
     let block_number = transaction_receipt.block_number.unwrap().as_u64() as i64;
     let transaction_hash = format!("0x{:x}", transaction_receipt.transaction_hash);
     let creator_address = format!("0x{:x}", transaction_receipt.from);
-    let contract_type = if verified_source_code.is_null() {
-        String::from("Unknown")
-    } else {
-        verified_source_code["contractType"].to_string()
-    };
     let abi = if verified_source_code.is_null() {
         serde_json::Value::Null
     } else {
         verified_source_code["abi"].clone()
     };
+    let contract_type = tokens::detect_contract_type(&abi).to_string();
+    println!("contract_type: {}", contract_type);
     let source_code = if verified_source_code.is_null() {
         String::from("")
     } else {
@@ -179,7 +177,30 @@ pub async fn insert_smart_contract(
     match result {
         Ok(_) => {
             // println!("Smart contract {} inserted/updated successfully", address);
-            Ok(())
+            if !verified_source_code.is_null() {
+                let contract_type = tokens::detect_contract_type(&abi);
+                match contract_type {
+                    tokens::ContractType::ERC20 => {
+                        tokens::insert_erc20_token(
+                            transaction_receipt.contract_address.unwrap(),
+                            abi.clone(),
+                            db_pool.clone(),
+                        )
+                        .await?;
+                    }
+                    // tokens::ContractType::ERC721 => {
+                    //     tokens::insert_erc721_token(
+                    //         address.clone(),
+                    //         abi_json,
+                    //         db_pool.clone(),
+                    //     ).await?;
+                    // }
+                    _ => {}
+                }
+                Ok(())
+            } else {
+                Ok(())
+            }
         }
         Err(err) => {
             eprintln!(

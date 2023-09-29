@@ -19,6 +19,9 @@ pub use addresses::*;
 mod contracts;
 pub use contracts::*;
 
+mod tokens;
+pub use tokens::*;
+
 /// Function to connect to the postgress database
 pub async fn connect_db() -> Pool<PostgresConnectionManager<NoTls>> {
     let database = env::var("POSTGRES_DB").unwrap();

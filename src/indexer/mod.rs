@@ -1,6 +1,6 @@
 // Module that handle block indexing
 // blocks/mod.rs
-use crate::db;
+use crate::{db, blockscout};
 use bb8::Pool;
 use bb8_postgres::PostgresConnectionManager;
 use ethers::prelude::*;
@@ -10,7 +10,6 @@ use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio_postgres::NoTls;
-// use bb8_postgres::tokio_postgres::Error as PostgresError;
 
 /// Get the latest block number
 pub async fn get_latest_block(ws_client: Arc<Provider<Ws>>) -> Result<U64, Box<dyn Error>> {
@@ -374,14 +373,8 @@ async fn index_smart_contract(
 
     // Get the verified source code of the contract
     // TODO: get the verified source code using blockscout API
-    // let verified_source_code = serde_json::json!(
-    //     "
-    //     {
-
-    //     }
-    //     "
-    // );
-    let verified_source_code = serde_json::json!({});
+    let verified_source_code = blockscout::get_verified_source_code(format!("0x{:x}", transaction_receipt.contract_address.unwrap())).await;
+    // let verified_source_code = serde_json::json!({});
 
     // Insert the address into the database
     if let Err(e) = db::insert_smart_contract(

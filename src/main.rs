@@ -10,6 +10,7 @@ use env_logger::Env;
 mod indexer;
 mod db;
 mod rpc;
+mod blockscout;
 
 /// This function is the entry point for the program.
 /// It will start the indexer and begin indexing blocks and transactions.
