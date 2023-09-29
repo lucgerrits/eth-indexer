@@ -1,8 +1,12 @@
 /// Eth-indexer is a tool for indexing Ethereum blocks and transactions.
 /// It will index the blocks and transactions into a Postgres database for later
 /// querying.
+///
+/// main.rs
 use dotenv::dotenv;
+use ethers::prelude::*;
 use std::{env, sync::Arc};
+use env_logger::Env;
 mod blocks;
 mod db;
 mod rpc;
@@ -24,7 +28,7 @@ mod rpc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Lets go!");
     dotenv().ok();
-
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     // Check all the environment variables are set
     let env_vars = vec![
         "VERSION",
@@ -36,6 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "POSTGRES_PASSWORD",
         "POSTGRES_DB",
         "POSTGRES_CREATE_TABLE_ORDER",
+        "BATCH_SIZE",
     ];
 
     for env_var in env_vars {
@@ -47,18 +52,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("");
 
     // Connect to the database
-    let db_client = db::connect_db().await;
+    let db_pool = db::connect_db().await;
     // Connect to the RPC endpoint
-    let ws_client = rpc::connect_rpc().await;
+    let ws_client = Arc::new(rpc::connect_rpc().await);
 
     // Init database
-    if let Err(e) = db::init_db(Arc::new(db_client)).await {
+    if let Err(e) = db::init_db(db_pool.clone()).await {
         eprintln!("Error initializing the database: {:?}", e);
     }
 
     // Get the latest block number
-    let last_block = blocks::get_latest_block(Arc::new(ws_client)).await?;
+    let last_block = blocks::get_latest_block(ws_client.clone()).await?;
     println!("Latest block number: {}", last_block);
+
+    println!("Starting indexing from block {} to {}", 0, last_block);
+
+    match blocks::index_blocks(U64::from(0), last_block, ws_client.clone(), db_pool.clone()).await {
+        Ok(_) => println!("Indexing complete!"),
+        Err(e) => eprintln!("Error indexing blocks: {:?}", e),
+    }
 
     println!("Done!");
     Ok(())

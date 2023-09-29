@@ -1,12 +1,17 @@
-/// Module to handle postgress database
+// Module to handle postgress database
+// db/mod.rs
+use bb8::Pool;
+use bb8_postgres::PostgresConnectionManager;
+use ethers::prelude::*;
+use log::{info, warn};
+use rust_decimal::prelude::*;
+use serde_json;
 use std::env;
 use std::error::Error;
 use std::fs;
-use std::sync::Arc;
-use tokio_postgres::{Client as PostgresClient, NoTls};
-
+use tokio_postgres::{types::ToSql, Client as PostgresClient, NoTls};
 /// Function to connect to the postgress database
-pub async fn connect_db() -> PostgresClient {
+pub async fn connect_db() -> Pool<PostgresConnectionManager<NoTls>> {
     let database = env::var("POSTGRES_DB").unwrap();
     let host = env::var("POSTGRES_HOST").unwrap();
     let user = env::var("POSTGRES_USER").unwrap();
@@ -18,28 +23,38 @@ pub async fn connect_db() -> PostgresClient {
     );
     let url_with_db: String = format!("{} dbname={}", url, database);
     // Check if the database exists
-    let database_exists = check_database_exists(&url, &database).await;
+    // let database_exists = check_database_exists(&url, &database).await;
 
-    if !database_exists {
-        // If the database does not exist, create it
-        create_database(&host, &port, &user, &password, &database, &url)
-            .await
-            .expect("Failed to create database");
-    }
+    // if !database_exists {
+    //     // If the database does not exist, create it
+    //     create_database(&host, &port, &user, &password, &database, &url)
+    //         .await
+    //         .expect("Failed to create database");
+    // }
 
-    // Connect to the database
-    let (client, connection) = tokio_postgres::connect(&url_with_db, NoTls)
+    // // Connect to the database
+    // let (client, connection) = tokio_postgres::connect(&url_with_db, NoTls)
+    //     .await
+    //     .expect("Failed to connect to the database");
+
+    // tokio::spawn(async move {
+    //     if let Err(e) = connection.await {
+    //         eprintln!("database connection error: {}", e);
+    //     }
+    // });
+
+    // println!("Connected to database!");
+    // client
+
+    let manager = PostgresConnectionManager::new_from_stringlike(url_with_db, NoTls)
+        .expect("Failed to create connection manager");
+
+    let pool = Pool::builder()
+        .build(manager)
         .await
-        .expect("Failed to connect to the database");
+        .expect("Failed to create connection pool");
 
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            eprintln!("database connection error: {}", e);
-        }
-    });
-
-    println!("Connected to database!");
-    client
+    pool
 }
 
 async fn check_database_exists(url: &str, database_name: &str) -> bool {
@@ -108,28 +123,31 @@ pub async fn create_database(
 }
 
 /// Function to initialize the database
-/// 
+///
 /// It will check if the configuration table exists and if the version matches
 /// the environment variable. If not, it will execute the SQL files in the
 /// order specified by the environment variable POSTGRES_CREATE_TABLE_ORDER.
 /// It will also update the version in the configuration table.
-/// 
+///
 /// If the configuration table does not exist, it will execute the SQL files
 /// in the order specified by the environment variable POSTGRES_CREATE_TABLE_ORDER
 /// and create the configuration table with the version specified by the
 /// environment variable VERSION.
-/// 
+///
 /// If the configuration table exists but the version does not match, it will
 /// execute the SQL files in the order specified by the environment variable
 /// POSTGRES_CREATE_TABLE_ORDER and update the version in the configuration
 /// table with the version specified by the environment variable VERSION.
-/// 
-pub async fn init_db(client: Arc<PostgresClient>) -> Result<(), Box<dyn Error>> {
+///
+pub async fn init_db(
+    db_pool: Pool<PostgresConnectionManager<NoTls>>,
+) -> Result<(), Box<dyn Error>> {
+    let db_client = db_pool.get().await?;
     let config_version = env::var("VERSION").unwrap_or_default();
     let config_name = "version";
 
     // Check if the configuration table exists
-    let table_exists = check_table_exists(&client, "configuration").await;
+    let table_exists = check_table_exists(&db_client, "configuration").await;
 
     if table_exists {
         // Check if the version in the configuration matches the environment variable
@@ -138,7 +156,7 @@ pub async fn init_db(client: Arc<PostgresClient>) -> Result<(), Box<dyn Error>> 
             config_name
         );
 
-        if let Ok(row) = client.query_one(&version_query, &[]).await {
+        if let Ok(row) = db_client.query_one(&version_query, &[]).await {
             let stored_version: &str = row.try_get("config_value").unwrap_or_default();
 
             if stored_version == config_version {
@@ -160,7 +178,7 @@ pub async fn init_db(client: Arc<PostgresClient>) -> Result<(), Box<dyn Error>> 
         };
 
         // Execute SQL queries using prepared statements
-        if let Err(e) = client.batch_execute(&sql).await {
+        if let Err(e) = db_client.batch_execute(&sql).await {
             eprintln!("Error executing SQL from {}: {:?}", sql_file_path, e);
         } else {
             println!("Executed SQL from: {:?}", sql_file_path);
@@ -171,11 +189,10 @@ pub async fn init_db(client: Arc<PostgresClient>) -> Result<(), Box<dyn Error>> 
     let update_version_query = format!(
         "INSERT INTO configuration (config_name, config_value) VALUES ('{}', '{}')
          ON CONFLICT (config_name) DO UPDATE SET config_value = EXCLUDED.config_value",
-        config_name,
-        config_version
+        config_name, config_version
     );
 
-    if let Err(e) = client.batch_execute(&update_version_query).await {
+    if let Err(e) = db_client.batch_execute(&update_version_query).await {
         eprintln!("Error updating version in configuration: {:?}", e);
     }
 
@@ -198,5 +215,235 @@ async fn check_table_exists(client: &PostgresClient, table_name: &str) -> bool {
         exists
     } else {
         false
+    }
+}
+
+/////////////////////////////////////////////////////////
+// Utility functions for inserting information into the database
+
+/// Function to insert a block into the database
+/// Database schema:
+/// CREATE TABLE blocks (
+/// "number" BIGINT NOT NULL PRIMARY KEY,
+/// "hash" VARCHAR(66) NOT NULL,
+/// "parentHash" VARCHAR(66) NOT NULL,
+/// "nonce" VARCHAR(18) NOT NULL,
+/// "sha3Uncles" VARCHAR(66) NOT NULL,
+/// "logsBloom" TEXT NOT NULL,
+/// "transactionsRoot" VARCHAR(66) NOT NULL,
+/// "stateRoot" VARCHAR(66) NOT NULL,
+/// "miner" VARCHAR(42) NOT NULL,
+/// "difficulty" BIGINT NOT NULL,
+/// "totalDifficulty" NUMERIC(50),
+/// "size" INT NOT NULL,
+/// "extraData" VARCHAR(66) NOT NULL,
+/// "gasLimit" NUMERIC(100),
+/// "gasUsed" NUMERIC(100),
+/// "timestamp" INT NOT NULL,
+/// "transactionsCount" INT,
+/// "transactions_ids" JSON,
+/// "uncles" JSON,
+/// "lastUpdated" timestamp default current_timestamp
+/// );
+///
+pub async fn insert_block(
+    block: Block<H256>,
+    db_pool: Pool<PostgresConnectionManager<NoTls>>,
+) -> Result<(), Box<dyn Error>> {
+    // println!(
+    //     "Inserting block {} into database",
+    //     block.number.unwrap().to_string()
+    // );
+
+    // Extract relevant data from the block
+    let number = block.number.unwrap().as_u64() as i64;
+    let hash = format!("0x{:x}", block.hash.unwrap());
+    let parent_hash = format!("0x{:x}", block.parent_hash);
+    let nonce = format!("0x{:x}", block.nonce.unwrap());
+    let sha3_uncles = serde_json::to_value(&block.uncles).unwrap().to_string();
+    let logs_bloom = format!("0x{:x}", block.logs_bloom.unwrap());
+    let transactions_root = format!("0x{:x}", block.transactions_root);
+    let state_root = format!("0x{:x}", block.state_root);
+    let miner = format!("0x{:x}", block.author.unwrap());
+    let difficulty = block.difficulty.as_u64() as i64;
+    // let total_difficulty = block.total_difficulty.map(|d| Decimal::from(d.as_u64() as i64)).unwrap_or_default();
+    let total_difficulty = block
+        .total_difficulty
+        .map(|u256| Decimal::from(u256.as_u128()))
+        .unwrap_or(Decimal::new(0, 0));
+    let size = block.size.unwrap().as_u32() as i32;
+    let extra_data = format!("{:x}", block.extra_data);
+    let gas_limit = Decimal::from(block.gas_limit.as_u128() as i64);
+    let gas_used = Decimal::from(block.gas_used.as_u128() as i64);
+    let timestamp = block.timestamp.as_u64() as i32;
+    let transactions_count = block.transactions.len() as i32;
+    let transactions_ids = serde_json::to_value(&block.transactions).unwrap();
+    let uncles = serde_json::to_value(&block.uncles).unwrap();
+
+    // Build the SQL query
+    let query = r#"
+        INSERT INTO blocks ("number", "hash", "parentHash", "nonce", "sha3Uncles", "logsBloom", "transactionsRoot",
+                            "stateRoot", "miner", "difficulty", "totalDifficulty", "size", "extraData", "gasLimit",
+                            "gasUsed", "timestamp", "transactionsCount", "transactions_ids", "uncles")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        ON CONFLICT ("number") DO NOTHING;
+    "#;
+    // Prepare the statement
+    let db_client = db_pool.get().await.map_err(|e| {
+        eprintln!("Error acquiring database connection: {:?}", e);
+        Box::new(e) as Box<dyn Error>
+    })?;
+    let statement = db_client
+        .prepare(query)
+        .await
+        .expect("Failed to prepare statement");
+
+    // Prepare the parameter values
+    let params: [&(dyn ToSql + Sync); 19] = [
+        &number,
+        &hash,
+        &parent_hash,
+        &nonce,
+        &sha3_uncles,
+        &logs_bloom,
+        &transactions_root,
+        &state_root,
+        &miner,
+        &difficulty,
+        &total_difficulty,
+        &size,
+        &extra_data,
+        &gas_limit,
+        &gas_used,
+        &timestamp,
+        &transactions_count,
+        &transactions_ids,
+        &uncles,
+    ];
+
+    // Execute the query with parameters
+    let result = db_client.execute(&statement, &params).await;
+
+    match result {
+        Ok(_) => {
+            // println!("Block {} inserted successfully", number);
+            Ok(())
+        }
+        Err(err) => {
+            eprintln!("Error inserting block {}: {}", number, err);
+            Err(Box::new(err))
+        }
+    }
+}
+
+/// Function to insert a transaction into the database
+/// Database schema:
+/// CREATE TABLE transactions (
+/// r VARCHAR(66) NOT NULL,
+/// s VARCHAR(66) NOT NULL,
+/// v VARCHAR(4) NOT NULL,
+/// "to" VARCHAR(42),
+/// "gas" INT NOT NULL,
+/// "from" VARCHAR(42) NOT NULL,
+/// "hash" VARCHAR(66) NOT NULL PRIMARY KEY,
+/// "type" SMALLINT NOT NULL,
+/// "input" TEXT NOT NULL,
+/// "nonce" INT NOT NULL,
+/// "value" NUMERIC(100),
+/// "chainId" VARCHAR(10),
+/// "gasPrice" NUMERIC(100),
+/// "blockHash" VARCHAR(66),
+/// "accessList" JSON,
+/// "blockNumber" BIGINT NOT NULL,
+/// "maxFeePerGas" NUMERIC(100),
+/// "transactionIndex" INT NOT NULL,
+/// "maxPriorityFeePerGas" NUMERIC(100),
+/// "lastUpdated" timestamp default current_timestamp,
+/// FOREIGN KEY ("blockNumber") REFERENCES blocks("number") ON DELETE CASCADE
+/// );
+pub async fn insert_transaction(
+    transaction: Transaction,
+    db_pool: Pool<PostgresConnectionManager<NoTls>>,
+) -> Result<(), Box<dyn Error>> {
+    // Extract relevant data from the transaction
+    let r = format!("0x{:x}", transaction.r);
+    let s = format!("0x{:x}", transaction.s);
+    let v = format!("0x{:x}", transaction.v);
+    let to = format!("0x{:x}", transaction.to.unwrap_or_default());
+    let gas = transaction.gas.as_u64() as i32;
+    let from = format!("0x{:x}", transaction.from);
+    let hash = format!("0x{:x}", transaction.hash());
+    let transaction_type = transaction.transaction_type.unwrap().as_u64() as i16;
+    let input = format!("{:x}", transaction.input);
+    let nonce = transaction.nonce.as_u64() as i32;
+    let value = Decimal::from(transaction.value.as_u128() as i64);
+    let chain_id = transaction.chain_id.unwrap().as_u64().to_string();
+    let gas_price = Decimal::from(transaction.gas_price.unwrap().as_u128() as i64);
+    let block_hash = format!("0x{:x}", transaction.block_hash.unwrap());
+    let access_list = serde_json::to_value(&transaction.access_list).unwrap();
+    let block_number = transaction.block_number.unwrap().as_u64() as i64;
+    let max_fee_per_gas =
+        Decimal::from(transaction.max_fee_per_gas.unwrap_or_default().as_u128() as i64);
+    let transaction_index = transaction.transaction_index.unwrap_or_default().as_u64() as i32;
+    let max_priority_fee_per_gas = Decimal::from(
+        transaction
+            .max_priority_fee_per_gas
+            .unwrap_or_default()
+            .as_u128() as i64,
+    );
+
+    // Build the SQL query
+    let query = r#"
+        INSERT INTO transactions ("r", "s", "v", "to", "gas", "from", "hash", "type", "input",
+                                  "nonce", "value", "chainId", "gasPrice", "blockHash",
+                                  "accessList", "blockNumber", "maxFeePerGas", "transactionIndex",
+                                  "maxPriorityFeePerGas")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14 ,$15, $16, $17, $18, $19)
+        ON CONFLICT ("hash") DO NOTHING;
+    "#;
+    // Prepare the statement
+    let db_client = db_pool.get().await.map_err(|e| {
+        eprintln!("Error acquiring database connection: {:?}", e);
+        Box::new(e) as Box<dyn Error>
+    })?;
+    let statement = db_client
+        .prepare(query)
+        .await
+        .expect("Failed to prepare statement");
+    // Prepare the parameter values
+    let params: [&(dyn ToSql + Sync); 19] = [
+        &r,
+        &s,
+        &v,
+        &to,
+        &gas,
+        &from,
+        &hash,
+        &transaction_type,
+        &input,
+        &nonce,
+        &value,
+        &chain_id,
+        &gas_price,
+        &block_hash,
+        &access_list,
+        &block_number,
+        &max_fee_per_gas,
+        &transaction_index,
+        &max_priority_fee_per_gas,
+    ];
+
+    // Execute the query with parameters
+    let result = db_client.execute(&statement, &params).await;
+
+    match result {
+        Ok(_) => {
+            // println!("Transaction {} inserted successfully", hash);
+            Ok(())
+        }
+        Err(err) => {
+            eprintln!("Error inserting transaction {}: {}", hash, err);
+            Err(Box::new(err))
+        }
     }
 }
