@@ -114,7 +114,7 @@ pub async fn insert_log(
         }
     }
 
-    // From here on: Detect token transfert in logs and store token transfert in DB
+    // From here on: Detect token transfer in logs and store token transfer in DB
 
     // Get the ABI for the contract address
     let abi: serde_json::Value =
@@ -143,27 +143,27 @@ pub async fn insert_log(
     match contract_type {
         indexer_types::ContractType::ERC20 => {
             // Decode the log data
-            let decoded_log: indexer_types::Transfert = contract
+            let decoded_log: indexer_types::Transfer = contract
                 .decode_event("Transfer", log.clone().topics, log.clone().data)
                 .unwrap();
             debug!("Decoded log: {:?}", decoded_log);
 
-            // Compute the hash of the "Transfert" event signature.
-            let transfert_signature_hash =
+            // Compute the hash of the "Transfer" event signature.
+            let transfer_signature_hash =
                 H256::from(keccak256("Transfer(address,address,uint256)".as_bytes()));
 
-            // Check if the log is a Transfert event
+            // Check if the log is a Transfer event
             if let Some(topic) = log.clone().topics.get(0) {
-                if *topic == transfert_signature_hash {
-                    debug!("Found Transfert {} at block: {}", address, block_number);
-                    // Store the transfert in the database
-                    match tokens::insert_erc20_transfert(log.clone(), decoded_log.clone(), db_pool.clone()).await {
+                if *topic == transfer_signature_hash {
+                    debug!("Found Transfer {} at block: {}", address, block_number);
+                    // Store the transfer in the database
+                    match tokens::insert_erc20_transfer(log.clone(), decoded_log.clone(), db_pool.clone()).await {
                         Ok(_) => {
-                            debug!("Transfert inserted successfully");
+                            debug!("Transfer inserted successfully");
                             return Ok(());
                         }
                         Err(e) => {
-                            log_error!("Error inserting Transfert: {}", e);
+                            log_error!("Error inserting Transfer: {}", e);
                             return Err(e);
                         }
                     }

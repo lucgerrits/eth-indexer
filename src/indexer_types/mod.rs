@@ -189,7 +189,7 @@ impl TokenInfo {
 
 // ERC20 event Transfer(address,address,uint256)
 #[derive(Debug, Clone, EthAbiType, EthAbiCodec)]
-pub struct Transfert {
+pub struct Transfer {
     pub from: Address,
     pub to: Address,
     pub value: U256,

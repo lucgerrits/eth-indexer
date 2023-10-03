@@ -165,9 +165,9 @@ async fn get_erc20_token_data(
 ///     "lastUpdated" timestamp default current_timestamp,
 ///     CONSTRAINT token_transfers_pkey PRIMARY KEY ("transactionHash", "blockHash", "logIndex")
 /// );
-pub async fn insert_erc20_transfert(
+pub async fn insert_erc20_transfer(
     log: Log,
-    decoded_log: indexer_types::Transfert,
+    decoded_log: indexer_types::Transfer,
     db_pool: Pool<PostgresConnectionManager<NoTls>>,
 ) -> Result<(), Box<dyn Error>> {
     debug!("Inserting ERC20 transfer: {:?}", log);
