@@ -37,7 +37,7 @@ pub async fn get_verified_sc_data(address: String) -> indexer_types::ContractInf
         }
         Err(e) => {
             log_error!("Error parsing JSON");
-            log_error!("Error: {:?}", e);
+            log_error!("Error: {}", e);
             serde_json::from_value(serde_json::json!([])).unwrap()
         }
     };

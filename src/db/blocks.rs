@@ -78,7 +78,7 @@ pub async fn insert_block(
     "#;
     // Prepare the statement
     let db_client = db_pool.get().await.map_err(|e| {
-        log_error!("Error acquiring database connection: {:?}", e);
+        log_error!("Error acquiring database connection: {}", e);
         Box::new(e) as Box<dyn Error>
     })?;
     let statement = db_client

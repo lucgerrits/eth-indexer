@@ -4,7 +4,7 @@ use bb8::Pool;
 use bb8_postgres::PostgresConnectionManager;
 use ethers::{abi::Abi, prelude::*};
 use ethers_contract::Contract;
-use log::{error as log_error, debug};
+use log::{debug, error as log_error};
 use rust_decimal::prelude::*;
 use std::{error::Error, sync::Arc};
 use tokio_postgres::{types::ToSql, NoTls};
@@ -41,7 +41,8 @@ pub async fn insert_erc20_token(
 ) -> Result<(), Box<dyn Error>> {
     debug!("Inserting ERC20 token: {}", address);
     // Get the token data using the contract ABI and ws_client
-    let token_data = get_token_data(address, verified_sc_data.clone(), ws_client.clone()).await?;
+    let token_data =
+        get_erc20_token_data(address, verified_sc_data.clone(), ws_client.clone()).await?;
     // Build the SQL query
     let query = r#"
         INSERT INTO tokens 
@@ -59,7 +60,7 @@ pub async fn insert_erc20_token(
 
     // Prepare the statement
     let db_client = db_pool.get().await.map_err(|e| {
-        log_error!("Error acquiring database connection: {:?}", e);
+        log_error!("Error acquiring database connection: {}", e);
         Box::new(e) as Box<dyn Error>
     })?;
     let statement = db_client
@@ -87,13 +88,13 @@ pub async fn insert_erc20_token(
         }
         Err(e) => {
             log_error!("Error inserting token: {}", address);
-            log_error!("Error: {:?}", e);
+            log_error!("Error: {}", e);
             Err(Box::new(e))
         }
     }
 }
 
-async fn get_token_data(
+async fn get_erc20_token_data(
     address: Address,
     verified_sc_data: indexer_types::ContractInfo,
     ws_client: Arc<Provider<Ws>>,
@@ -110,7 +111,7 @@ async fn get_token_data(
     let total_supply: U256 = match contract.method("totalSupply", ()) {
         Ok(method) => method.call().await?,
         Err(e) => {
-            log_error!("Error: {:?}", e);
+            log_error!("Error: {}", e);
             U256::zero()
         }
     };
@@ -119,7 +120,7 @@ async fn get_token_data(
     let name: String = match contract.method("name", ()) {
         Ok(method) => method.call().await?,
         Err(e) => {
-            log_error!("Error: {:?}", e);
+            log_error!("Error: {}", e);
             String::from("")
         }
     };
@@ -128,7 +129,7 @@ async fn get_token_data(
     let symbol: String = match contract.method("symbol", ()) {
         Ok(method) => method.call().await?,
         Err(e) => {
-            log_error!("Error: {:?}", e);
+            log_error!("Error: {}", e);
             String::from("")
         }
     };
@@ -137,7 +138,7 @@ async fn get_token_data(
     let decimals: U256 = match contract.method("decimals", ()) {
         Ok(method) => method.call().await?,
         Err(e) => {
-            log_error!("Error: {:?}", e);
+            log_error!("Error: {}", e);
             U256::zero()
         }
     };
@@ -147,4 +148,86 @@ async fn get_token_data(
 
     debug!("Token data: {}", token_data.to_string());
     Ok(token_data)
+}
+
+/// Function to insert a token transfer into the database
+/// Database schema:
+/// CREATE TABLE "token_transfers" (
+///     "contractAddress" VARCHAR(42) NOT NULL,
+///     "fromAddress" VARCHAR(42),
+///     "toAddress" VARCHAR(42),
+///     "transactionHash" VARCHAR(66) NOT NULL,
+///     "blockNumber" BIGINT NOT NULL,
+///     "blockHash" VARCHAR(66),
+///     "logIndex" integer NOT NULL,
+///     "amount" NUMERIC(100),
+///     "insertedAt" timestamp,
+///     "lastUpdated" timestamp default current_timestamp,
+///     CONSTRAINT token_transfers_pkey PRIMARY KEY ("transactionHash", "blockHash", "logIndex")
+/// );
+pub async fn insert_erc20_transfert(
+    log: Log,
+    decoded_log: indexer_types::Transfert,
+    db_pool: Pool<PostgresConnectionManager<NoTls>>,
+) -> Result<(), Box<dyn Error>> {
+    debug!("Inserting ERC20 transfer: {:?}", log);
+
+    // Extract relevant data from the transaction receipt
+    let contract_address = format!("0x{:x}", log.address);
+    let from_address = format!("0x{:x}", decoded_log.from);
+    let to_address = format!("0x{:x}", decoded_log.to);
+    let transaction_hash = format!("0x{:x}", log.transaction_hash.unwrap());
+    let block_hash = format!("0x{:x}", log.block_hash.unwrap());
+    let block_number = log.block_number.unwrap().as_u64() as i64;
+    let log_index = log.log_index.unwrap().as_u64() as i32;
+    let amount = Decimal::from_str(decoded_log.value.to_string().as_str()).unwrap();
+
+    // Build the SQL query
+    let query = r#"
+        INSERT INTO token_transfers 
+        ("contractAddress", "fromAddress", "toAddress", "transactionHash", "blockNumber", "blockHash", "logIndex", "amount", "insertedAt") 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW()) 
+        ON CONFLICT ("transactionHash", "blockHash", "logIndex") 
+        DO UPDATE SET 
+        "fromAddress" = EXCLUDED."fromAddress",
+        "toAddress" = EXCLUDED."toAddress",
+        "amount" = EXCLUDED."amount"
+    "#;
+
+    // Prepare the statement
+    let db_client = db_pool.get().await.map_err(|e| {
+        log_error!("Error acquiring database connection: {}", e);
+        Box::new(e) as Box<dyn Error>
+    })?;
+    let statement = db_client
+        .prepare(query)
+        .await
+        .expect("Failed to prepare statement");
+
+    // Prepare the parameter values
+    let params: [&(dyn ToSql + Sync); 8] = [
+        &contract_address,
+        &from_address,
+        &to_address,
+        &transaction_hash,
+        &block_number,
+        &block_hash,
+        &log_index,
+        &amount,
+    ];
+
+    // Execute the query with parameters
+    let result = db_client.execute(&statement, &params).await;
+
+    match result {
+        Ok(_) => {
+            debug!("Inserted ERC20 transfer: {}", transaction_hash);
+            Ok(())
+        }
+        Err(e) => {
+            log_error!("Error inserting ERC20 transfer: {}", transaction_hash);
+            log_error!("Error: {}", e);
+            Err(Box::new(e))
+        }
+    }
 }

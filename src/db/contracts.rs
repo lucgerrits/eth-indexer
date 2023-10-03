@@ -4,14 +4,14 @@ use crate::{db::tokens, indexer_types};
 use bb8::Pool;
 use bb8_postgres::PostgresConnectionManager;
 use ethers::prelude::*;
+use log::{debug, error as log_error};
 use serde_json;
 use std::{error::Error, sync::Arc};
 use tokio_postgres::{types::ToSql, NoTls};
-use log::{error as log_error, debug};
 
 /// Function to insert smart contract information into the database
 /// Particularity is that we need the ws_client to get the smart contract data if we have the ABI.
-/// 
+///
 /// Database schema:
 /// CREATE TABLE contracts (
 /// "address" VARCHAR(42) NOT NULL PRIMARY KEY,
@@ -144,7 +144,7 @@ pub async fn insert_smart_contract(
 
     // Prepare the statement
     let db_client = db_pool.get().await.map_err(|e| {
-        log_error!("Error acquiring database connection: {:?}", e);
+        log_error!("Error acquiring database connection: {}", e);
         Box::new(e) as Box<dyn Error>
     })?;
     let statement = db_client
@@ -190,12 +190,9 @@ pub async fn insert_smart_contract(
                         ws_client.clone(),
                     )
                     .await?;
-                } else if contract_type == "ERC721" {
-                    // tokens::insert_erc721_token(
-                    //     transaction_receipt.contract_address.unwrap(),
-                    //     verified_sc_data.clone(),
-                    //     db_pool.clone(),
-                    // )
+                } else {
+                    //TODO: Handle other contract types
+                    debug!("Contract type is not supported yet");
                 }
             }
             Ok(())
@@ -203,7 +200,8 @@ pub async fn insert_smart_contract(
         Err(err) => {
             log_error!(
                 "Error inserting/updating smart contract {}: {}",
-                address, err
+                address,
+                err
             );
             Err(Box::new(err))
         }

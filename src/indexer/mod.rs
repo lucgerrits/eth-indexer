@@ -72,7 +72,7 @@ pub async fn index_blocks(
 
         for task in tasks {
             if let Err(e) = task.await {
-                log_error!("Error indexing blocks: {:?}", e);
+                log_error!("Error indexing blocks: {}", e);
             }
         }
 
@@ -131,7 +131,7 @@ pub async fn index_blocks(
 
         for task in tasks {
             if let Err(e) = task.await {
-                log_error!("Error indexing blocks: {:?}", e);
+                log_error!("Error indexing blocks: {}", e);
             }
         }
     }
@@ -167,7 +167,7 @@ async fn index_block(
                 }
             }
         }
-        _ => log_error!("Error indexing block {}", block_number),
+        _ => log_error!("Error retrieving block {}", block_number),
     }
 
     Ok(())

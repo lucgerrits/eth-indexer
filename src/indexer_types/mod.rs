@@ -1,23 +1,9 @@
 // Module: indexer_types
+use ethers::prelude::*;
+use ethers_contract::{EthAbiCodec, EthAbiType};
+use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use rust_decimal::prelude::*;
-
-#[derive(Debug, Deserialize, Serialize)]
-struct ABIEntry {
-    name: String,
-    inputs: Option<Vec<ABIParam>>,
-    outputs: Option<Vec<ABIParam>>,
-    r#type: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[allow(non_snake_case)]
-struct ABIParam {
-    name: String,
-    internalType: Option<String>,
-    r#type: String,
-}
 
 // ContractType is an enum that represents the type of a smart contract
 pub enum ContractType {
@@ -159,8 +145,6 @@ impl fmt::Display for ContractInfo {
     }
 }
 
-
-
 #[allow(non_snake_case)]
 pub struct TokenInfo {
     pub name: String,
@@ -178,7 +162,7 @@ impl TokenInfo {
             symbol: String::from(""),
             totalSupply: Decimal::zero(),
             decimals: Decimal::zero(),
-            holderCount:  Decimal::zero(),
+            holderCount: Decimal::zero(),
             totalSupplyUpdatedAtBlock: String::from(""),
         }
     }
@@ -201,4 +185,12 @@ impl TokenInfo {
             self.totalSupplyUpdatedAtBlock,
         )
     }
+}
+
+// ERC20 event Transfer(address,address,uint256)
+#[derive(Debug, Clone, EthAbiType, EthAbiCodec)]
+pub struct Transfert {
+    pub from: Address,
+    pub to: Address,
+    pub value: U256,
 }

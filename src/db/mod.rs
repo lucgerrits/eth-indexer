@@ -184,7 +184,7 @@ pub async fn init_db(
 
         // Execute SQL queries using prepared statements
         if let Err(e) = db_client.batch_execute(&sql).await {
-            log_error!("Error executing SQL from {}: {:?}", sql_file_path, e);
+            log_error!("Error executing SQL from {}: {}", sql_file_path, e);
         } else {
             info!("Executed SQL from: {:?}", sql_file_path);
         }
@@ -198,7 +198,7 @@ pub async fn init_db(
     );
 
     if let Err(e) = db_client.batch_execute(&update_version_query).await {
-        log_error!("Error updating version in configuration: {:?}", e);
+        log_error!("Error updating version in configuration: {}", e);
     }
 
     Ok(())
@@ -221,4 +221,25 @@ async fn check_table_exists(client: &PostgresClient, table_name: &str) -> bool {
     } else {
         false
     }
+}
+
+
+async fn get_abi_by_address(
+    address: String,
+    db_pool: Pool<PostgresConnectionManager<NoTls>>,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    let db_client = db_pool.get().await?;
+    let query = format!(
+        "SELECT \"abi\" FROM contracts WHERE address = '{}'",
+        address
+    );
+    let row = db_client.query_one(&query, &[]).await?;
+    let abi_json: serde_json::Value = row.try_get("abi")?;
+    if abi_json.is_null() {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "abi is null",
+        )));
+    }
+    Ok(abi_json)
 }

@@ -6,7 +6,6 @@
 use dotenv::dotenv;
 use ethers::prelude::*;
 use std::{env, sync::Arc};
-use env_logger::Env;
 mod indexer;
 mod db;
 mod rpc;
@@ -32,7 +31,6 @@ use log::{error as log_error, info};
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Configuration:");
     dotenv().ok();
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     // Check all the environment variables are set
     let env_vars = vec![
         "VERSION",
@@ -47,14 +45,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "BATCH_SIZE",
         "START_BLOCK",
         "END_BLOCK",
+        "LOG_LEVEL",
     ];
-
+  
     for env_var in env_vars {
         match env::var(env_var) {
             Ok(_) => println!("{0: <30}= {1}", env_var, env::var(env_var).unwrap()),
             Err(_) => panic!("{} is not set", env_var),
         }
     }
+    if env::var("LOG_LEVEL").is_err() {
+        env::set_var("LOG_LEVEL", "info")
+    }
+    env_logger::Builder::from_env("LOG_LEVEL").init();
     info!("");
 
     // Connect to the database
@@ -64,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Init database
     if let Err(e) = db::init_db(db_pool.clone()).await {
-        log_error!("Error initializing the database: {:?}", e);
+        log_error!("Error initializing the database: {}", e);
     }
 
     // Get the latest block number
@@ -90,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match indexer::index_blocks(U64::from(start_block), U64::from(end_block), ws_client.clone(), db_pool.clone()).await {
         Ok(_) => info!("Indexing complete!", ),
-        Err(e) => log_error!("Error indexing blocks: {:?}", e),
+        Err(e) => log_error!("Error indexing blocks: {}", e),
     }
 
     info!("Done!");
