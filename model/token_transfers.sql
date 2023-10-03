@@ -7,6 +7,7 @@ CREATE TABLE "token_transfers" (
     "blockHash" VARCHAR(66),
     "logIndex" integer NOT NULL,
     "amount" NUMERIC(100),
+    "insertedAt" timestamp,
     "lastUpdated" timestamp default current_timestamp,
     CONSTRAINT token_transfers_pkey PRIMARY KEY ("transactionHash", "blockHash", "logIndex")
 );

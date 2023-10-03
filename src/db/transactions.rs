@@ -7,6 +7,7 @@ use rust_decimal::prelude::*;
 use serde_json;
 use std::error::Error;
 use tokio_postgres::{types::ToSql, NoTls};
+use log::{error as log_error, debug};
 
 /// Function to insert a transaction into the database
 /// Database schema:
@@ -69,13 +70,13 @@ pub async fn insert_transaction(
         INSERT INTO transactions ("r", "s", "v", "to", "gas", "from", "hash", "type", "input",
                                   "nonce", "value", "chainId", "gasPrice", "blockHash",
                                   "accessList", "blockNumber", "maxFeePerGas", "transactionIndex",
-                                  "maxPriorityFeePerGas")
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14 ,$15, $16, $17, $18, $19)
+                                  "maxPriorityFeePerGas", "insertedAt")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14 ,$15, $16, $17, $18, $19, NOW())
         ON CONFLICT ("hash") DO NOTHING;
     "#;
     // Prepare the statement
     let db_client = db_pool.get().await.map_err(|e| {
-        eprintln!("Error acquiring database connection: {:?}", e);
+        log_error!("Error acquiring database connection: {:?}", e);
         Box::new(e) as Box<dyn Error>
     })?;
     let statement = db_client
@@ -110,11 +111,11 @@ pub async fn insert_transaction(
 
     match result {
         Ok(_) => {
-            // println!("Transaction {} inserted successfully", hash);
+            debug!("Transaction {} inserted successfully", hash);
             Ok(())
         }
         Err(err) => {
-            eprintln!("Error inserting transaction {}: {}", hash, err);
+            log_error!("Error inserting transaction {}: {}", hash, err);
             Err(Box::new(err))
         }
     }
@@ -178,13 +179,13 @@ pub async fn insert_transaction_receipt(
         INSERT INTO transactions_receipts ("transactionHash", "transactionIndex", "blockHash", "from",
                                             "to", "blockNumber", "cumulativeGasUsed", "gasUsed",
                                             "contractAddress", "logs", "logsBloom", "status",
-                                            "effectiveGasPrice", "type")
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13 ,$14)
+                                            "effectiveGasPrice", "type", "insertedAt")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13 ,$14, NOW())
         ON CONFLICT ("transactionHash") DO NOTHING;
     "#;
     // Prepare the statement
     let db_client = db_pool.get().await.map_err(|e| {
-        eprintln!("Error acquiring database connection: {:?}", e);
+        log_error!("Error acquiring database connection: {:?}", e);
         Box::new(e) as Box<dyn Error>
     })?;
     let statement = db_client
@@ -214,11 +215,11 @@ pub async fn insert_transaction_receipt(
 
     match result {
         Ok(_) => {
-            // println!("Transaction receipt {} inserted successfully", transaction_hash);
+            debug!("Transaction receipt {} inserted successfully", transaction_hash);
             Ok(())
         }
         Err(err) => {
-            eprintln!(
+            log_error!(
                 "Error inserting transaction receipt {}: {}",
                 transaction_hash, err
             );

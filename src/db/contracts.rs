@@ -1,15 +1,17 @@
 // Module: db::contracts
 
+use crate::{db::tokens, indexer_types};
 use bb8::Pool;
 use bb8_postgres::PostgresConnectionManager;
 use ethers::prelude::*;
 use serde_json;
-use std::error::Error;
+use std::{error::Error, sync::Arc};
 use tokio_postgres::{types::ToSql, NoTls};
-
-use super::tokens;
+use log::{error as log_error, debug};
 
 /// Function to insert smart contract information into the database
+/// Particularity is that we need the ws_client to get the smart contract data if we have the ABI.
+/// 
 /// Database schema:
 /// CREATE TABLE contracts (
 /// "address" VARCHAR(42) NOT NULL PRIMARY KEY,
@@ -35,8 +37,9 @@ use super::tokens;
 pub async fn insert_smart_contract(
     transaction_receipt: TransactionReceipt,
     code: Bytes,
-    verified_source_code: serde_json::Value,
+    verified_sc_data: indexer_types::ContractInfo,
     db_pool: Pool<PostgresConnectionManager<NoTls>>,
+    ws_client: Arc<Provider<Ws>>,
 ) -> Result<(), Box<dyn Error>> {
     // It is possible that the verified_source_code is empty
     // We will insert the minimum information into the database
@@ -47,66 +50,65 @@ pub async fn insert_smart_contract(
     let block_number = transaction_receipt.block_number.unwrap().as_u64() as i64;
     let transaction_hash = format!("0x{:x}", transaction_receipt.transaction_hash);
     let creator_address = format!("0x{:x}", transaction_receipt.from);
-    let abi = if verified_source_code.is_null() {
-        serde_json::Value::Null
+    let abi: serde_json::Value = if verified_sc_data.is_null() {
+        serde_json::from_str("[]").unwrap()
     } else {
-        verified_source_code["abi"].clone()
+        serde_json::from_str(verified_sc_data.clone().abi.as_str()).unwrap()
     };
-    let contract_type = tokens::detect_contract_type(&abi).to_string();
-    println!("contract_type: {}", contract_type);
-    let source_code = if verified_source_code.is_null() {
+    let contract_type = if verified_sc_data.is_null() {
         String::from("")
     } else {
-        verified_source_code["sourceCode"].to_string()
+        verified_sc_data.clone().contractType
     };
-    let additional_sources = if verified_source_code.is_null() {
+    let source_code = if verified_sc_data.is_null() {
         String::from("")
     } else {
-        verified_source_code["additionalSources"].to_string()
+        verified_sc_data.clone().sourceCode
     };
-    let compiler_settings = if verified_source_code.is_null() {
+    let additional_sources = if verified_sc_data.is_null() {
         String::from("")
     } else {
-        verified_source_code["compilerSettings"].to_string()
+        verified_sc_data.clone().additionalSources
     };
-    let constructor_arguments = if verified_source_code.is_null() {
+    let compiler_settings = if verified_sc_data.is_null() {
         String::from("")
     } else {
-        verified_source_code["constructorArguments"].to_string()
+        verified_sc_data.clone().compilerSettings
     };
-    let evm_version = if verified_source_code.is_null() {
+    let constructor_arguments = if verified_sc_data.is_null() {
         String::from("")
     } else {
-        verified_source_code["EVMVersion"].to_string()
+        verified_sc_data.clone().constructorArguments
     };
-    let file_name = if verified_source_code.is_null() {
+    let evm_version = if verified_sc_data.is_null() {
         String::from("")
     } else {
-        verified_source_code["fileName"].to_string()
+        verified_sc_data.clone().EVMVersion
     };
-    let is_proxy = if verified_source_code.is_null() {
+    let file_name = if verified_sc_data.is_null() {
+        String::from("")
+    } else {
+        verified_sc_data.clone().fileName
+    };
+    let is_proxy = if verified_sc_data.is_null() {
         false
     } else {
-        verified_source_code["isProxy"]
-            .as_bool()
-            .unwrap_or_default()
+        verified_sc_data.clone().isProxy
     };
-    let contract_name = if verified_source_code.is_null() {
+    let contract_name = if verified_sc_data.is_null() {
         String::from("")
     } else {
-        verified_source_code["contractName"].to_string()
+        verified_sc_data.clone().contractName
     };
-    let compiler_version = if verified_source_code.is_null() {
+    let compiler_version = if verified_sc_data.is_null() {
         String::from("")
     } else {
-        verified_source_code["compilerVersion"].to_string()
+        verified_sc_data.clone().compilerVersion
     };
-    let optimization_used = if verified_source_code.is_null() {
+    let optimization_used = if verified_sc_data.is_null() {
         false
     } else {
-        verified_source_code["optimizationUsed"]
-            .as_bool()
-            .unwrap_or_default()
+        verified_sc_data.clone().optimizationUsed
     };
     let bytecode = format!("{:x}", code);
 
@@ -117,9 +119,9 @@ pub async fn insert_smart_contract(
                 "contractType",
                 "abi", "sourceCode", "additionalSources", "compilerSettings",
                 "constructorArguments", "EVMVersion", "fileName", "isProxy",
-                "contractName", "compilerVersion", "optimizationUsed")
+                "contractName", "compilerVersion", "optimizationUsed", "insertedAt")
                 VALUES 
-                ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
             ON CONFLICT ("address")
             DO UPDATE SET
                 "bytecode" = EXCLUDED."bytecode",
@@ -142,7 +144,7 @@ pub async fn insert_smart_contract(
 
     // Prepare the statement
     let db_client = db_pool.get().await.map_err(|e| {
-        eprintln!("Error acquiring database connection: {:?}", e);
+        log_error!("Error acquiring database connection: {:?}", e);
         Box::new(e) as Box<dyn Error>
     })?;
     let statement = db_client
@@ -176,34 +178,30 @@ pub async fn insert_smart_contract(
 
     match result {
         Ok(_) => {
-            // println!("Smart contract {} inserted/updated successfully", address);
-            if !verified_source_code.is_null() {
-                let contract_type = tokens::detect_contract_type(&abi);
-                match contract_type {
-                    tokens::ContractType::ERC20 => {
-                        tokens::insert_erc20_token(
-                            transaction_receipt.contract_address.unwrap(),
-                            abi.clone(),
-                            db_pool.clone(),
-                        )
-                        .await?;
-                    }
-                    // tokens::ContractType::ERC721 => {
-                    //     tokens::insert_erc721_token(
-                    //         address.clone(),
-                    //         abi_json,
-                    //         db_pool.clone(),
-                    //     ).await?;
-                    // }
-                    _ => {}
+            debug!("Smart contract {} inserted/updated successfully", address);
+            if !verified_sc_data.is_null() {
+                debug!("Detected contract type: {}", contract_type);
+                if contract_type == "ERC20" {
+                    tokens::insert_erc20_token(
+                        transaction_receipt.contract_address.unwrap(),
+                        verified_sc_data.clone(),
+                        transaction_receipt.block_number.unwrap(),
+                        db_pool.clone(),
+                        ws_client.clone(),
+                    )
+                    .await?;
+                } else if contract_type == "ERC721" {
+                    // tokens::insert_erc721_token(
+                    //     transaction_receipt.contract_address.unwrap(),
+                    //     verified_sc_data.clone(),
+                    //     db_pool.clone(),
+                    // )
                 }
-                Ok(())
-            } else {
-                Ok(())
             }
+            Ok(())
         }
         Err(err) => {
-            eprintln!(
+            log_error!(
                 "Error inserting/updating smart contract {}: {}",
                 address, err
             );

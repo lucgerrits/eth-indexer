@@ -7,6 +7,7 @@ use rust_decimal::prelude::*;
 use serde_json;
 use std::error::Error;
 use tokio_postgres::{types::ToSql, NoTls};
+use log::{error as log_error, debug};
 
 /// Function to insert a block into the database
 /// Database schema:
@@ -37,10 +38,10 @@ pub async fn insert_block(
     block: Block<H256>,
     db_pool: Pool<PostgresConnectionManager<NoTls>>,
 ) -> Result<(), Box<dyn Error>> {
-    // println!(
-    //     "Inserting block {} into database",
-    //     block.number.unwrap().to_string()
-    // );
+    debug!(
+        "Inserting block {} into database",
+        block.number.unwrap().to_string()
+    );
 
     // Extract relevant data from the block
     let number = block.number.unwrap().as_u64() as i64;
@@ -71,13 +72,13 @@ pub async fn insert_block(
     let query = r#"
         INSERT INTO blocks ("number", "hash", "parentHash", "nonce", "sha3Uncles", "logsBloom", "transactionsRoot",
                             "stateRoot", "miner", "difficulty", "totalDifficulty", "size", "extraData", "gasLimit",
-                            "gasUsed", "timestamp", "transactionsCount", "transactions_ids", "uncles")
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+                            "gasUsed", "timestamp", "transactionsCount", "transactions_ids", "uncles", "insertedAt")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW())
         ON CONFLICT ("number") DO NOTHING;
     "#;
     // Prepare the statement
     let db_client = db_pool.get().await.map_err(|e| {
-        eprintln!("Error acquiring database connection: {:?}", e);
+        log_error!("Error acquiring database connection: {:?}", e);
         Box::new(e) as Box<dyn Error>
     })?;
     let statement = db_client
@@ -113,11 +114,11 @@ pub async fn insert_block(
 
     match result {
         Ok(_) => {
-            // println!("Block {} inserted successfully", number);
+            debug!("Block {} inserted successfully", number);
             Ok(())
         }
         Err(err) => {
-            eprintln!("Error inserting block {}: {}", number, err);
+            log_error!("Error inserting block {}: {}", number, err);
             Err(Box::new(err))
         }
     }

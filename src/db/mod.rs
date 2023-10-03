@@ -2,6 +2,7 @@
 // db/mod.rs
 use bb8::Pool;
 use bb8_postgres::PostgresConnectionManager;
+use log::{error as log_error, info};
 use std::env;
 use std::error::Error;
 use std::fs;
@@ -21,6 +22,9 @@ pub use contracts::*;
 
 mod tokens;
 pub use tokens::*;
+
+mod logs;
+pub use logs::*;
 
 /// Function to connect to the postgress database
 pub async fn connect_db() -> Pool<PostgresConnectionManager<NoTls>> {
@@ -52,7 +56,7 @@ pub async fn connect_db() -> Pool<PostgresConnectionManager<NoTls>> {
         .await
         .expect("Failed to create connection pool");
 
-    println!("Connected to database!");
+    info!("Connected to database!");
     pool
 }
 
@@ -63,7 +67,7 @@ async fn check_database_exists(url: &str, database_name: &str) -> bool {
 
     tokio::spawn(async move {
         if let Err(e) = connection.await {
-            eprintln!("database connection error for existence check: {}", e);
+            log_error!("database connection error for existence check: {}", e);
         }
     });
 
@@ -87,7 +91,7 @@ async fn create_database(
     database: &str,
     url: &str,
 ) -> Result<PostgresClient, tokio_postgres::Error> {
-    println!(
+    info!(
         "Database \"{}\" does not exist. Creating database...",
         database
     );
@@ -101,7 +105,7 @@ async fn create_database(
 
     tokio::spawn(async move {
         if let Err(e) = connection.await {
-            eprintln!("Default database connection error: {}", e);
+            log_error!("Default database connection error: {}", e);
         }
     });
 
@@ -115,7 +119,7 @@ async fn create_database(
 
     tokio::spawn(async move {
         if let Err(e) = connection.await {
-            eprintln!("New database connection error: {}", e);
+            log_error!("New database connection error: {}", e);
         }
     });
 
@@ -160,18 +164,19 @@ pub async fn init_db(
             let stored_version: &str = row.try_get("config_value").unwrap_or_default();
 
             if stored_version == config_version {
-                println!("Database is up-to-date. Skipping initialization.");
+                // println!("Database is up-to-date. Skipping initialization.");
                 return Ok(());
             }
         }
     }
 
     // If the table doesn't exist or the versions don't match, perform initialization
+    // TODO: perform an update instead on just applying the SQL files
     let sql_files = env::var("POSTGRES_CREATE_TABLE_ORDER").unwrap();
     let sql_file_paths: Vec<&str> = sql_files.split(",").collect();
     for sql_file_path in sql_file_paths {
         let full_sql_file_path = format!("./model/{}.sql", sql_file_path);
-        println!("executing sql file: {}", full_sql_file_path);
+        info!("executing sql file: {}", full_sql_file_path);
         let sql = match fs::read_to_string(&full_sql_file_path) {
             Ok(sql) => sql,
             Err(e) => panic!("Error reading sql file: {}", e),
@@ -179,9 +184,9 @@ pub async fn init_db(
 
         // Execute SQL queries using prepared statements
         if let Err(e) = db_client.batch_execute(&sql).await {
-            eprintln!("Error executing SQL from {}: {:?}", sql_file_path, e);
+            log_error!("Error executing SQL from {}: {:?}", sql_file_path, e);
         } else {
-            println!("Executed SQL from: {:?}", sql_file_path);
+            info!("Executed SQL from: {:?}", sql_file_path);
         }
     }
 
@@ -193,7 +198,7 @@ pub async fn init_db(
     );
 
     if let Err(e) = db_client.batch_execute(&update_version_query).await {
-        eprintln!("Error updating version in configuration: {:?}", e);
+        log_error!("Error updating version in configuration: {:?}", e);
     }
 
     Ok(())

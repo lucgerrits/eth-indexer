@@ -13,6 +13,7 @@ CREATE TABLE transactions_receipts (
     "status" BOOLEAN,
     "effectiveGasPrice" NUMERIC(100),
     "type" VARCHAR(10),
+    "insertedAt" timestamp,
     "lastUpdated" timestamp default current_timestamp,
     FOREIGN KEY ("blockNumber") REFERENCES blocks("number") ON DELETE CASCADE,
     FOREIGN KEY ("transactionHash") REFERENCES transactions("hash") ON DELETE CASCADE

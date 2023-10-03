@@ -5,8 +5,9 @@ CREATE TABLE tokens (
     "symbol" text,
     "totalSupply" numeric,
     "decimals" numeric,
-    "lastUpdated" timestamp default current_timestamp,
     "holderCount" integer,
-    "totalSupplyUpdatedAtBlock" bigint
+    "totalSupplyUpdatedAtBlock" bigint,
+    "insertedAt" timestamp,
+    "lastUpdated" timestamp default current_timestamp
 );
 CREATE INDEX tokens_address_idx ON tokens ("address");

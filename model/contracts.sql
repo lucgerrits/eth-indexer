@@ -16,6 +16,8 @@ CREATE TABLE contracts (
     "compilerVersion" TEXT,
     "optimizationUsed" BOOLEAN,
     "bytecode" TEXT,
+    "insertedAt" timestamp,
+    "updatedAt" timestamp default current_timestamp,
     FOREIGN KEY ("blockNumber") REFERENCES blocks("number") ON DELETE CASCADE,
     FOREIGN KEY ("transactionHash") REFERENCES transactions("hash") ON DELETE CASCADE
 );

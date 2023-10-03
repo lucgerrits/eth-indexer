@@ -843,6 +843,7 @@ dependencies = [
  "dotenv",
  "env_logger",
  "ethers",
+ "ethers-contract",
  "eyre",
  "log",
  "num",

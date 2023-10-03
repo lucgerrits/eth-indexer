@@ -6,6 +6,7 @@ use ethers::prelude::*;
 use rust_decimal::prelude::*;
 use std::error::Error;
 use tokio_postgres::{types::ToSql, NoTls};
+use log::{error as log_error, debug};
 
 /// Function to insert an address into the database
 /// Update the address if it already exists with this rules:
@@ -56,8 +57,8 @@ pub async fn insert_address(
     // Build the SQL query
     let query = r#"
         INSERT INTO addresses ("address", "balance", "nonce", "transactionCount", "blockNumber",
-                               "contractCode", "storage")
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                               "contractCode", "storage", "insertedAt")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
         ON CONFLICT ("address") DO UPDATE
         SET "balance" = CASE
             WHEN excluded."blockNumber" > addresses."blockNumber" THEN excluded."balance"
@@ -89,7 +90,7 @@ pub async fn insert_address(
 
     // Prepare the statement
     let db_client = db_pool.get().await.map_err(|e| {
-        eprintln!("Error acquiring database connection: {:?}", e);
+        log_error!("Error acquiring database connection: {:?}", e);
         Box::new(e) as Box<dyn Error>
     })?;
     let statement = db_client
@@ -113,11 +114,11 @@ pub async fn insert_address(
 
     match result {
         Ok(_) => {
-            // println!("Address {} inserted/updated successfully", address);
+            debug!("Address {} inserted/updated successfully", address);
             Ok(())
         }
         Err(err) => {
-            eprintln!("Error inserting/updating address {}: {}", address, err);
+            log_error!("Error inserting/updating address {}: {}", address, err);
             Err(Box::new(err))
         }
     }

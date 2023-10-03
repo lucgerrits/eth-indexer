@@ -18,6 +18,7 @@ CREATE TABLE transactions (
     "maxFeePerGas" NUMERIC(100),
     "transactionIndex" INT NOT NULL,
     "maxPriorityFeePerGas" NUMERIC(100),
+    "insertedAt" timestamp,
     "lastUpdated" timestamp default current_timestamp,
     FOREIGN KEY ("blockNumber") REFERENCES blocks("number") ON DELETE CASCADE
 );

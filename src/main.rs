@@ -11,6 +11,9 @@ mod indexer;
 mod db;
 mod rpc;
 mod blockscout;
+mod indexer_types;
+pub use indexer_types::*;
+use log::{error as log_error, info};
 
 /// This function is the entry point for the program.
 /// It will start the indexer and begin indexing blocks and transactions.
@@ -27,7 +30,7 @@ mod blockscout;
 ///
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Lets go!");
+    println!("Configuration:");
     dotenv().ok();
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     // Check all the environment variables are set
@@ -52,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(_) => panic!("{} is not set", env_var),
         }
     }
-    println!("");
+    info!("");
 
     // Connect to the database
     let db_pool = db::connect_db().await;
@@ -61,12 +64,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Init database
     if let Err(e) = db::init_db(db_pool.clone()).await {
-        eprintln!("Error initializing the database: {:?}", e);
+        log_error!("Error initializing the database: {:?}", e);
     }
 
     // Get the latest block number
     let last_block = indexer::get_latest_block(ws_client.clone()).await?;
-    println!("Latest block number: {}", last_block);
+    info!("Latest block number: {}", last_block);
 
     // if START_BLOCK is set, use that as the start block
     let start_block = U64::from(
@@ -83,13 +86,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or(last_block.as_u64()),
     );
 
-    println!("Starting indexing from block {} to {}", start_block, end_block);
+    info!("Starting indexing from block {} to {}", start_block, end_block);
 
     match indexer::index_blocks(U64::from(start_block), U64::from(end_block), ws_client.clone(), db_pool.clone()).await {
-        Ok(_) => println!("Indexing complete!"),
-        Err(e) => eprintln!("Error indexing blocks: {:?}", e),
+        Ok(_) => info!("Indexing complete!", ),
+        Err(e) => log_error!("Error indexing blocks: {:?}", e),
     }
 
-    println!("Done!");
+    info!("Done!");
     Ok(())
 }

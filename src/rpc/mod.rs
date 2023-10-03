@@ -1,7 +1,7 @@
 /// Module to handle RPC requests
 use ethers::prelude::*;
 use std::env;
-
+use log::info;
 /// Function to connect to the RPC endpoint in WebSocket
 /// Returns a client
 pub async fn connect_rpc() -> Provider<Ws> {
@@ -10,6 +10,6 @@ pub async fn connect_rpc() -> Provider<Ws> {
         Ok(client) => client,
         Err(e) => panic!("Error connecting to RPC endpoint: {}", e),
     };
-    println!("Connected to RPC endpoint!");
+    info!("Connected to RPC endpoint!");
     client
 }

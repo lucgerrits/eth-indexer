@@ -18,6 +18,7 @@ CREATE TABLE blocks (
     "transactionsCount" INT,
     "transactions_ids" JSON,
     "uncles" JSON,
+    "insertedAt" timestamp,
     "lastUpdated" timestamp default current_timestamp
 );
 
