@@ -143,9 +143,13 @@ pub async fn insert_log(
     match contract_type {
         indexer_types::ContractType::ERC20 => {
             // Decode the log data
-            let decoded_log: indexer_types::Transfer = contract
-                .decode_event("Transfer", log.clone().topics, log.clone().data)
-                .unwrap();
+            let decoded_log: indexer_types::Transfer = match contract.decode_event("Transfer", log.clone().topics, log.clone().data) {
+                Ok(decoded_log) => decoded_log,
+                Err(e) => {
+                    log_error!("Error decoding log: {}", e);
+                    return Err(Box::new(e));
+                }
+            };
             debug!("Decoded log: {:?}", decoded_log);
 
             // Compute the hash of the "Transfer" event signature.

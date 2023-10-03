@@ -1,18 +1,70 @@
 // Module that handle block indexing
 // blocks/mod.rs
-use crate::{db, blockscout};
+use crate::{db, blockscout, rpc};
 use bb8::Pool;
 use bb8_postgres::PostgresConnectionManager;
 use ethers::prelude::*;
-use log::{error as log_error, info};
+use log::{error as log_error, info, warn};
 use std::env;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio_postgres::NoTls;
 
+
+pub struct Indexer {
+}
+
+impl Indexer {
+    pub fn new() -> Indexer {
+        Indexer {
+        }
+    }
+
+    pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let ws_client = Arc::new(rpc::connect_rpc().await);
+        let db_pool = db::connect_db().await;
+        // Init database
+        // TODO: maybe move this
+        if let Err(e) = db::init_db(db_pool.clone()).await {
+            log_error!("Error initializing the database: {}", e);
+        }
+        let last_block = get_latest_block(ws_client.clone()).await?;
+        let start_block = U64::from(
+            env::var("START_BLOCK")
+                .unwrap_or_else(|_| "0".to_string())
+                .parse::<u64>()
+                .unwrap_or(0),
+        );
+        let end_block = U64::from(
+            env::var("END_BLOCK")
+                .unwrap_or_else(|_| "-1".to_string())
+                .parse::<u64>()
+                .unwrap_or(last_block.as_u64()),
+        );
+        info!(
+            "Starting indexing from block {} to {}",
+            start_block, end_block
+        );
+        match index_blocks(
+            U64::from(start_block),
+            U64::from(end_block),
+            ws_client.clone(),
+            db_pool.clone(),
+        )
+        .await
+        {
+            Ok(_) => info!("Indexing complete!",),
+            Err(e) => log_error!("Error indexing blocks: {}", e),
+        }
+        info!("Done!");
+        Ok(())
+    }
+}
+
+
 /// Get the latest block number
-pub async fn get_latest_block(ws_client: Arc<Provider<Ws>>) -> Result<U64, Box<dyn Error>> {
+async fn get_latest_block(ws_client: Arc<Provider<Ws>>) -> Result<U64, Box<dyn Error>> {
     match ws_client.get_block(BlockNumber::Latest).await {
         Ok(Some(Block {
             number: Some(block),
@@ -30,7 +82,7 @@ pub async fn get_latest_block(ws_client: Arc<Provider<Ws>>) -> Result<U64, Box<d
 /// A block contains a list of transactions. Each transaction is indexed by
 /// calling the `index_transaction` function.
 ///
-pub async fn index_blocks(
+async fn index_blocks(
     start_block: U64,
     end_block: U64,
     ws_client: Arc<Provider<Ws>>,
@@ -97,11 +149,11 @@ pub async fn index_blocks(
             let estimated_remaining_time = Duration::from_secs_f64(estimated_remaining_time_secs);
 
             info!("Indexing blocks {:.1}%", progress);
-            info!(
+            warn!(
                 "Blocks per second: {:.1}",
                 blocks_processed as f64 / elapsed_seconds
             );
-            info!(
+            warn!(
                 "Estimated remaining time (sec): {:.1}",
                 estimated_remaining_time.as_secs_f32()
             );
