@@ -135,7 +135,7 @@ async fn index_blocks(
         blocks_processed += batch_size.as_u64();
         blocks_processed_total += batch_size.as_u64();
         let elapsed_time = start_time.elapsed();
-        if elapsed_time >= Duration::new(3, 0) {
+        if elapsed_time >= Duration::new(5, 0) {
             let progress = blocks_processed_total as f64 / total_blocks as f64 * 100.0;
 
             // Calculate estimated remaining time

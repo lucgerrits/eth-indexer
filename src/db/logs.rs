@@ -142,16 +142,6 @@ pub async fn insert_log(
 
     match contract_type {
         indexer_types::ContractType::ERC20 => {
-            // Decode the log data
-            let decoded_log: indexer_types::Transfer = match contract.decode_event("Transfer", log.clone().topics, log.clone().data) {
-                Ok(decoded_log) => decoded_log,
-                Err(e) => {
-                    log_error!("Error decoding log: {}", e);
-                    return Err(Box::new(e));
-                }
-            };
-            debug!("Decoded log: {:?}", decoded_log);
-
             // Compute the hash of the "Transfer" event signature.
             let transfer_signature_hash =
                 H256::from(keccak256("Transfer(address,address,uint256)".as_bytes()));
@@ -160,8 +150,29 @@ pub async fn insert_log(
             if let Some(topic) = log.clone().topics.get(0) {
                 if *topic == transfer_signature_hash {
                     debug!("Found Transfer {} at block: {}", address, block_number);
+
+                    // Decode the log data
+                    let decoded_log: indexer_types::Transfer = match contract.decode_event(
+                        "Transfer",
+                        log.clone().topics,
+                        log.clone().data,
+                    ) {
+                        Ok(decoded_log) => decoded_log,
+                        Err(e) => {
+                            log_error!("Error decoding log: {}", e);
+                            return Err(Box::new(e));
+                        }
+                    };
+                    debug!("Decoded log: {:?}", decoded_log);
+
                     // Store the transfer in the database
-                    match tokens::insert_erc20_transfer(log.clone(), decoded_log.clone(), db_pool.clone()).await {
+                    match tokens::insert_erc20_transfer(
+                        log.clone(),
+                        decoded_log.clone(),
+                        db_pool.clone(),
+                    )
+                    .await
+                    {
                         Ok(_) => {
                             debug!("Transfer inserted successfully");
                             return Ok(());
