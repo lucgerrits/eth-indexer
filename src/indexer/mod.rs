@@ -1,6 +1,6 @@
 // Module that handle block indexing
 // blocks/mod.rs
-use crate::{db, blockscout, rpc};
+use crate::{blockscout, db, rpc};
 use bb8::Pool;
 use bb8_postgres::PostgresConnectionManager;
 use ethers::prelude::*;
@@ -11,25 +11,28 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio_postgres::NoTls;
 
-
 pub struct Indexer {
+    ws_client: Arc<Provider<Ws>>,
+    db_pool: Pool<PostgresConnectionManager<NoTls>>,
 }
 
 impl Indexer {
-    pub fn new() -> Indexer {
+    pub async fn new() -> Indexer {
+        // Connect to the WS RPC endpoint and database
         Indexer {
+            ws_client: Arc::new(rpc::connect_rpc().await),
+            db_pool: db::connect_db().await,
         }
     }
-
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let ws_client = Arc::new(rpc::connect_rpc().await);
-        let db_pool = db::connect_db().await;
         // Init database
         // TODO: maybe move this
-        if let Err(e) = db::init_db(db_pool.clone()).await {
+        if let Err(e) = db::init_db(self.db_pool.clone()).await {
             log_error!("Error initializing the database: {}", e);
         }
-        let last_block = get_latest_block(ws_client.clone()).await?;
+        let last_block = get_latest_block(self.ws_client.clone()).await?;
+        // Use some env variables to set the start and end block
+        // By default we will index all the blocks
         let start_block = U64::from(
             env::var("START_BLOCK")
                 .unwrap_or_else(|_| "0".to_string())
@@ -42,15 +45,80 @@ impl Indexer {
                 .parse::<u64>()
                 .unwrap_or(last_block.as_u64()),
         );
-        info!(
+        warn!(
             "Starting indexing from block {} to {}",
             start_block, end_block
         );
         match index_blocks(
-            U64::from(start_block),
-            U64::from(end_block),
-            ws_client.clone(),
-            db_pool.clone(),
+            start_block,
+            end_block,
+            self.ws_client.clone(),
+            self.db_pool.clone(),
+        )
+        .await
+        {
+            Ok(_) => info!("Indexing complete!",),
+            Err(e) => log_error!("Error indexing blocks: {}", e),
+        }
+        info!("Done!");
+        Ok(())
+    }
+
+    pub async fn run_live(&self) -> Result<(), Box<dyn std::error::Error>> {
+        // Init database
+        // TODO: maybe move this
+        if let Err(e) = db::init_db(self.db_pool.clone()).await {
+            log_error!("Error initializing the database: {}", e);
+        }
+
+        // Index every new incoming block
+        let mut tasks = vec![];
+        let mut subscription = self.ws_client.subscribe_blocks().await.unwrap();
+        while let Some(block) = subscription.next().await {
+            match block.number {
+                Some(block_number) => {
+                    info!("New block: {}", block_number);
+                    let thd_ws_client = Arc::clone(&self.ws_client);
+                    let thd_db_pool = self.db_pool.clone(); // Clone the connection pool for each thread
+                    let thd_block_number = block_number.clone();
+                    // Index block
+                    tasks.push(tokio::spawn(async move {
+                        index_block(thd_block_number, thd_ws_client, thd_db_pool).await
+                    }));
+                }
+                _ => {
+                    log_error!("Error block subscription: {:?}", block);
+                }
+            }
+        }
+        for task in tasks {
+            if let Err(e) = task.await {
+                log_error!("Error indexing blocks: {}", e);
+            }
+        }
+        info!("Done!");
+        Ok(())
+    }
+    pub async fn run_last_blocks(
+        &self,
+        number_of_blocks: u64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // Init database
+        // TODO: maybe move this
+        if let Err(e) = db::init_db(self.db_pool.clone()).await {
+            log_error!("Error initializing the database: {}", e);
+        }
+        let last_block = get_latest_block(self.ws_client.clone()).await?;
+        let start_block = U64::from(last_block.as_u64() - number_of_blocks);
+        warn!(
+            "Starting indexing from block {} to {}",
+            start_block, last_block
+        );
+        match index_blocks(
+            start_block,
+            last_block,
+            self.ws_client.clone(),
+            self.db_pool.clone(),
         )
         .await
         {
@@ -61,7 +129,6 @@ impl Indexer {
         Ok(())
     }
 }
-
 
 /// Get the latest block number
 async fn get_latest_block(ws_client: Arc<Provider<Ws>>) -> Result<U64, Box<dyn Error>> {
@@ -118,7 +185,7 @@ async fn index_blocks(
             let thd_block_number = block_number.clone();
 
             tasks.push(tokio::spawn(async move {
-                index_block(U64::from(thd_block_number), thd_ws_client, &thd_db_pool).await
+                index_block(U64::from(thd_block_number), thd_ws_client, thd_db_pool).await
             }));
         }
 
@@ -177,7 +244,7 @@ async fn index_blocks(
             let thd_block_number = block_number.clone();
 
             tasks.push(tokio::spawn(async move {
-                index_block(U64::from(thd_block_number), thd_ws_client, &thd_db_pool).await
+                index_block(U64::from(thd_block_number), thd_ws_client, thd_db_pool).await
             }));
         }
 
@@ -197,7 +264,7 @@ async fn index_blocks(
 async fn index_block(
     block_number: U64,
     ws_client: Arc<Provider<Ws>>,
-    db_pool: &Pool<PostgresConnectionManager<NoTls>>,
+    db_pool: Pool<PostgresConnectionManager<NoTls>>,
 ) -> Result<(), String> {
     match ws_client.get_block(block_number).await {
         Ok(Some(block)) => {
@@ -303,15 +370,19 @@ async fn index_transaction(
                         )
                         .await
                         {
-                            let error_message = format!("Error indexing smart contract code: {:?}", e);
+                            let error_message =
+                                format!("Error indexing smart contract code: {:?}", e);
                             log_error!("{}", error_message);
                             return Err(error_message); // Return the error message
                         }
                     }
                     // Index the transactions logs
                     for log in transaction_receipt.logs {
-                        if let Err(e) = db::insert_log(log, db_pool.clone(), ws_client.clone()).await {
-                            let error_message = format!("Error inserting log into database: {:?}", e);
+                        if let Err(e) =
+                            db::insert_log(log, db_pool.clone(), ws_client.clone()).await
+                        {
+                            let error_message =
+                                format!("Error inserting log into database: {:?}", e);
                             log_error!("{}", error_message);
                             return Err(error_message); // Return the error message
                         }
@@ -383,7 +454,8 @@ async fn index_address(
         Err(e) => {
             log_error!(
                 "Error getting transaction count for address {}: {}",
-                address, e
+                address,
+                e
             );
             return Err(e.to_string());
         }
@@ -433,7 +505,11 @@ async fn index_smart_contract(
 
     // Get the verified source code of the contract
     // TODO: get the verified source code using blockscout API
-    let verified_sc_data = blockscout::get_verified_sc_data(format!("0x{:x}", transaction_receipt.contract_address.unwrap())).await;
+    let verified_sc_data = blockscout::get_verified_sc_data(format!(
+        "0x{:x}",
+        transaction_receipt.contract_address.unwrap()
+    ))
+    .await;
     // let verified_sc_data = serde_json::json!({});
 
     // Insert the address into the database

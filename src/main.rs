@@ -4,7 +4,7 @@
 ///
 /// main.rs
 use dotenv::dotenv;
-use std::env;
+use std::{env, time::Duration};
 mod blockscout;
 mod db;
 mod indexer;
@@ -12,7 +12,8 @@ mod indexer_types;
 mod rpc;
 use crate::indexer::Indexer;
 pub use indexer_types::*;
-use log::info;
+use log::{info, warn};
+use tokio::signal;
 
 /// This function is the entry point for the program.
 /// It will start the indexer and begin indexing blocks and transactions.
@@ -20,12 +21,72 @@ use log::info;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     check_env();
     load_env();
+    let args: Vec<String> = env::args().collect();
 
-    let indexer = Indexer::new();
-    indexer.run().await?;
+    match args.len() {
+        // no arguments passed
+        1 => {
+            help();
+        }
+        // one argument passed
+        2 => match args[1].as_str() {
+            "index_all" => {
+                warn!("Starting indexer");
+                let indexer = Indexer::new().await;
+                indexer.run().await?;
+            }
+            "index_live" => {
+                warn!("Starting live indexer");
+                let indexer = Indexer::new().await;
 
-    info!("Done!");
+                // Register a signal handler for CTRL+C (SIGINT)
+                let ctrl_c = signal::ctrl_c();
+
+                // Create a future that completes after a timeout
+                let timeout = tokio::time::sleep(Duration::from_secs(10));
+
+                tokio::select! {
+                    _ = ctrl_c => {
+                        // Handle the exit signal here
+                        println!("\nReceived exit signal. Exiting...");
+                    }
+                    _ = indexer.run_live() => {}
+                    _ = timeout => {
+                        // Handle timeout if needed
+                    }
+                }
+            }
+            "help" => {
+                help();
+            }
+            _ => {
+                println!("'{}' is not a valid argument", args[1]);
+                help();
+            }
+        },
+        // three arguments passed
+        3 => match args[1].as_str() {
+            "index_last" => {
+                warn!("Starting indexer");
+                let indexer = Indexer::new().await;
+                let number_of_blocks: u64 = args[2].parse().unwrap();
+                indexer.run_last_blocks(number_of_blocks).await?;
+            }
+            _ => {
+                println!("'{}' is not a valid argument", args[1]);
+                help();
+            }
+        },
+        _ => {
+            println!("Too many arguments passed");
+            help();
+        }
+    }
     Ok(())
+}
+
+fn help() {
+    println!("\nUsage: eth-indexer [index_all|index_live|help]\n");
 }
 
 fn check_env() {
@@ -43,8 +104,6 @@ fn check_env() {
         "POSTGRES_DATABASE",
         "POSTGRES_CREATE_TABLE_ORDER",
         "BATCH_SIZE",
-        "START_BLOCK",
-        "END_BLOCK",
         "LOG_LEVEL",
     ];
 
@@ -54,7 +113,7 @@ fn check_env() {
             Err(_) => panic!("{} is not set", env_var),
         }
     }
-    info!("");
+    println!("");
 }
 
 fn load_env() {
