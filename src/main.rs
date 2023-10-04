@@ -3,7 +3,6 @@
 /// querying.
 ///
 /// main.rs
-use dotenv::dotenv;
 use std::{env, time::Duration};
 mod blockscout;
 mod db;
@@ -90,7 +89,20 @@ fn help() {
 }
 
 fn check_env() {
-    dotenv().ok();
+    // Determine which environment file to load
+    let env_file = match env::var("ETH_INDEXER") {
+        Ok(value) if value == "production" => {
+            println!("Using .env.production for configuration.");
+            ".env.production"
+        }
+        _ => {
+            println!("Using .env for configuration.");
+            ".env"
+        }
+    };
+
+    dotenv::from_filename(env_file).ok();
+
     info!("Configuration:");
     // Check all the environment variables are set
     let env_vars = vec![
