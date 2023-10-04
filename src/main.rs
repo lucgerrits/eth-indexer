@@ -12,12 +12,15 @@ mod rpc;
 use crate::indexer::Indexer;
 pub use indexer_types::*;
 use log::{info, warn};
+use std::fs::File;
+use std::io::{self, Write};
 use tokio::signal;
 
 /// This function is the entry point for the program.
 /// It will start the indexer and begin indexing blocks and transactions.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    create_pid_file()?;
     check_env();
     load_env();
     let args: Vec<String> = env::args().collect();
@@ -55,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            "help" | "--help" | "-h" | "-v" | "--version"  => {
+            "help" | "--help" | "-h" | "-v" | "--version" => {
                 help();
             }
             _ => {
@@ -135,4 +138,11 @@ fn load_env() {
         env::set_var("LOG_LEVEL", "info")
     }
     env_logger::Builder::from_env("LOG_LEVEL").init();
+}
+
+fn create_pid_file() -> io::Result<()> {
+    let mut pid_file = File::create("app.pid")?;
+    let current_pid = std::process::id();
+    pid_file.write_all(current_pid.to_string().as_bytes())?;
+    Ok(())
 }
