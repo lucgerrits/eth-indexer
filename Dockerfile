@@ -38,11 +38,13 @@ WORKDIR /eth-indexer
 
 COPY --from=builder /eth-indexer/target/release/eth-indexer ./eth-indexer
 COPY --from=builder /eth-indexer/.env.production ./.env.production
+
 # 9615 for Prometheus (metrics)
+# TODO: Add prometheus metrics support
 EXPOSE 9615 
 
 ENV ETH_INDEXER=production
 
 RUN ./eth-indexer --help
 
-CMD [ "./eth-indexer" ]
+CMD [ "./eth-indexer index_live" ]
