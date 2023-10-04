@@ -1,0 +1,8 @@
+stages:
+  - build_dev
+  - deploy_dev
+
+include:
+  - "https://git.ziosting.com/ziosting-public/gitlab-ci/raw/master/templates.yml"
+  - ci/build_dev.yml
+  - ci/deploy_dev.yml

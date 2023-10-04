@@ -1,0 +1,21 @@
+deploy_dev:
+    image: ziosting/kompaas
+    stage: deploy_dev
+    script:
+    - export KUBE_CONFIG_DATA=${KUBE_CONFIG_DATA_DEV}
+
+    - kompaas project create blockchain-dev
+     # Deploy eth-indexer
+    - kompaas chart create -l helm eth-indexer eth-indexer
+    - kompaas value update image.tag ${CI_PIPELINE_ID}
+    - kompaas project render
+    - kompaas project deploy -n blockchain-dev
+    - kompaas project delete blockchain-dev
+    
+
+    tags:
+    - docker
+    except:
+    - tags
+
+
