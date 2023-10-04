@@ -1,6 +1,9 @@
 // Module: db::contracts
 
-use crate::{db::tokens, indexer_types};
+use crate::{
+    db::{logs, tokens},
+    indexer_types,
+};
 use bb8::Pool;
 use bb8_postgres::PostgresConnectionManager;
 use ethers::prelude::*;
@@ -190,6 +193,15 @@ pub async fn insert_smart_contract(
                         ws_client.clone(),
                     )
                     .await?;
+
+                    //trick to process logs from constructor, that seems to not show up in the receipts logs
+                    let filter_by_block =
+                        Filter::new().from_block(transaction_receipt.block_number.unwrap());
+                    let constructor_logs: Vec<Log> = ws_client.get_logs(&filter_by_block).await?;
+
+                    for log in constructor_logs {
+                        logs::insert_log(log, db_pool.clone(), ws_client.clone()).await?;
+                    }
                 } else {
                     //TODO: Handle other contract types
                     debug!("Contract type is not supported yet");
