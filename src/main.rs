@@ -40,7 +40,7 @@ fn check_env() {
         "POSTGRES_PORT",
         "POSTGRES_USER",
         "POSTGRES_PASSWORD",
-        "POSTGRES_DB",
+        "POSTGRES_DATABASE",
         "POSTGRES_CREATE_TABLE_ORDER",
         "BATCH_SIZE",
         "START_BLOCK",

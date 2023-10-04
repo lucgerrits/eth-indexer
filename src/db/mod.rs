@@ -28,7 +28,7 @@ pub use logs::*;
 
 /// Function to connect to the postgress database
 pub async fn connect_db() -> Pool<PostgresConnectionManager<NoTls>> {
-    let database = env::var("POSTGRES_DB").unwrap();
+    let database = env::var("POSTGRES_DATABASE").unwrap();
     let host = env::var("POSTGRES_HOST").unwrap();
     let user = env::var("POSTGRES_USER").unwrap();
     let password = env::var("POSTGRES_PASSWORD").unwrap();

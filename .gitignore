@@ -14,3 +14,4 @@
 # Ignore Cargo.lock for libraries
 # Uncomment the next line if you are building a library
 # Cargo.lock
+visualization/block_stats.png
