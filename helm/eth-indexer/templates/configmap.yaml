@@ -3,36 +3,23 @@ kind: ConfigMap
 metadata:
   name: {{ include "eth-indexer.fullname" . }}-config
 data: 
-  NODE_ENV: "production"
+    ETH_INDEXER: "production"
+    VERSION: "1.0"
+    LOG_LEVEL: "warn" #info, warn, debug, error
 
-  #postgres config:
-  POSTGRES_HOST: "blockchain-dev-postgres.blockchain-dev.svc.cluster.local"
-  POSTGRES_PORT: "5432"
-  POSTGRES_USER: "postgres"
-  POSTGRES_PASSWORD: ""
-  POSTGRES_DATABASE: "ethereum"
+    HTTP_RPC_ENDPOINT: "https://rpc.dev.hydrasquare-holding.com"
+    WS_RPC_ENDPOINT: "wss://ws.dev.hydrasquare-holding.com"
 
-  #worker config:
-  RETRY_FIND_WORKER_DELAY: "1000" #ms
-  RETRY_FIND_WORKER_COUNT: "10000"
+    POSTGRES_HOST: "blockchain-dev-postgres.blockchain-dev.svc.cluster.local"
+    POSTGRES_PORT: "5432"
+    POSTGRES_USER: "postgres"
+    POSTGRES_PASSWORD: ""
+    POSTGRES_DATABASE: "ethereum"
+    POSTGRES_CREATE_TABLE_ORDER: "config,blocks,transactions,transactions_receipts,addresses,contracts,tokens,token_transfers,logs"
 
-  #db query config:
-  MAX_RETRIES: "10"
-  RETRY_DELAY: "10000"
+    BATCH_SIZE: "500" # above 500 the blocks per second drops
+    START_BLOCK: "0"
+    END_BLOCK: "-1"
 
-  #eth config:
-  ETH_WS_URL: "wss://ws.dev.hydrasquare-holding.com"
-  BLOCK_EXPLORER_URL: "https://blockscout.dev.hydrasquare-holding.com"
-  BLOCK_EXPLORER_API_KEY: "08f713f8-5626-4c89-b0a7-07ea6acc1521"
-
-  #log config:
-  LOG_LEVEL: "notice"
-  #Levels:
-  #   emerg: 0,
-  #   alert: 1,
-  #   crit: 2,
-  #   error: 3,
-  #   warning: 4,
-  #   notice: 5,
-  #   info: 6,
-  #   debug: 7
+    BLOCKSCOUT_ENDPOINT: "https://blockscout.dev.hydrasquare-holding.com"
+    BLOCKSCOUT_API_KEY: "6dc17aa2-3362-4e15-a2b4-704b0682e052"
