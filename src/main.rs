@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            "help" => {
+            "help" | "--help" | "-h" | "-v" | "--version"  => {
                 help();
             }
             _ => {
@@ -86,6 +86,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn help() {
     println!("\nUsage: eth-indexer [index_all|index_live|help]\n");
+    let version = env!("CARGO_PKG_VERSION");
+    println!("eth-indexer v{}", version);
 }
 
 fn check_env() {
