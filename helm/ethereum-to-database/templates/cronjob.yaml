@@ -1,0 +1,42 @@
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: check-last-blocks-cronjob
+spec:
+  schedule: "*/5 * * * *"
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: check-last-blocks-container
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+              envFrom:
+                - configMapRef:
+                    name: {{ include "eth-indexer.fullname" . }}-config
+              command: ["/bin/sh", "-c", "./eth-indexer index_last 100"]
+          restartPolicy: OnFailure
+
+---
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: verify-blocks-cronjob
+spec:
+  schedule: "0 0 * * *"
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: verify-blocks-container
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+              envFrom:
+                - configMapRef:
+                    name: {{ include "eth-indexer.fullname" . }}-config
+              command: ["/bin/sh", "-c", "./eth-indexer index_all"]
+          restartPolicy: OnFailure
