@@ -95,14 +95,26 @@ fn help() {
 
 fn check_env() {
     // Determine which environment file to load
+    // If the ETH_INDEXER environment variable is set, use a file
+    // such as .env.<ETH_INDEXER> for configuration.
     let env_file = match env::var("ETH_INDEXER") {
-        Ok(value) if value == "production" => {
-            println!("Using .env.production for configuration.");
-            ".env.production"
+        Ok(value) => {
+            //check if the file exists
+            let file_name = format!(".env.{}", value);
+            match File::open(&file_name) {
+                Ok(_) => {
+                    println!("Using {} for configuration.", file_name);
+                    file_name
+                }
+                Err(_) => {
+                    println!("{} does not exist. Using .env for configuration.", file_name);
+                    ".env".to_string()
+                }
+            }
         }
         _ => {
             println!("Using .env for configuration.");
-            ".env"
+            ".env".to_string()
         }
     };
 
