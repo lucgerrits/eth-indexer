@@ -3,7 +3,7 @@
 /// querying.
 ///
 /// main.rs
-use std::{env, time::Duration};
+use std::env;
 mod blockscout;
 mod db;
 mod indexer;
@@ -44,18 +44,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Register a signal handler for CTRL+C (SIGINT)
                 let ctrl_c = signal::ctrl_c();
 
-                // Create a future that completes after a timeout
-                let timeout = tokio::time::sleep(Duration::from_secs(10));
-
                 tokio::select! {
                     _ = ctrl_c => {
                         // Handle the exit signal here
                         println!("\nReceived exit signal. Exiting...");
                     }
                     _ = indexer.run_live() => {}
-                    _ = timeout => {
-                        // Handle timeout if needed
-                    }
                 }
             }
             "help" | "--help" | "-h" | "-v" | "--version" => {
@@ -107,7 +101,10 @@ fn check_env() {
                     file_name
                 }
                 Err(_) => {
-                    println!("{} does not exist. Using .env for configuration.", file_name);
+                    println!(
+                        "{} does not exist. Using .env for configuration.",
+                        file_name
+                    );
                     ".env".to_string()
                 }
             }
