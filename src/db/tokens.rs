@@ -43,6 +43,7 @@ pub async fn insert_erc20_token(
     // Get the token data using the contract ABI and ws_client
     let token_data =
         get_erc20_token_data(address, verified_sc_data.clone(), ws_client.clone()).await?;
+    let address = format!("0x{:x}", address);
     // Build the SQL query
     let query = r#"
         INSERT INTO tokens 
@@ -69,7 +70,7 @@ pub async fn insert_erc20_token(
         .expect("Failed to prepare statement");
     // Prepare the parameter values
     let params: [&(dyn ToSql + Sync); 8] = [
-        &address.to_string(),
+        &address,
         &verified_sc_data.contractType,
         &token_data.name,
         &token_data.symbol,
