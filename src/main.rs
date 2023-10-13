@@ -68,6 +68,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let number_of_blocks: u64 = args[2].parse().unwrap();
                 indexer.run_last_blocks(number_of_blocks).await?;
             }
+            "index_last_hours" => {
+                warn!("Starting indexer");
+                let indexer = Indexer::new().await;
+                //calculate the number of blocks in the last x hours
+                //there is on average 1 block every 6 seconds = 1/6 blocks per second
+                // 1 hour = 3600 seconds
+                // 3600 * 1/6 = 600 blocks per hour
+                let number_of_blocks: u64 = args[2].parse().unwrap();
+                indexer.run_last_blocks(number_of_blocks * 600).await?;
+            }
             _ => {
                 println!("'{}' is not a valid argument", args[1]);
                 help();
