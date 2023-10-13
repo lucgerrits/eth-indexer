@@ -23,3 +23,4 @@ CREATE TABLE transactions (
     FOREIGN KEY ("blockNumber") REFERENCES blocks("number") ON DELETE CASCADE
 );
 CREATE INDEX transactions_hash_idx ON transactions ("hash");
+CREATE INDEX idx_transactions_blockNumber ON transactions ("blockNumber");

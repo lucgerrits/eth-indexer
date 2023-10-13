@@ -23,3 +23,4 @@ CREATE TABLE blocks (
 );
 
 CREATE INDEX blocks_number_idx ON blocks ("number");
+CREATE INDEX idx_blocks_timestamp ON blocks ("timestamp");
