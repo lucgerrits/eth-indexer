@@ -9,28 +9,50 @@ use std::env;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::Semaphore;
 use tokio_postgres::NoTls;
 
 pub struct Indexer {
-    ws_client: Arc<Provider<Ws>>,
-    db_pool: Pool<PostgresConnectionManager<NoTls>>,
+    ws_clients: Vec<Arc<Provider<Ws>>>,
+    db_pools: Vec<Pool<PostgresConnectionManager<NoTls>>>,
 }
 
 impl Indexer {
     pub async fn new() -> Indexer {
+        let ws_connections = env::var("NB_OF_WS_CONNECTIONS")
+            .unwrap_or_else(|_| "1".to_string())
+            .parse::<u32>()
+            .unwrap_or(1);
+        let db_connections = env::var("NB_OF_DB_CONNECTIONS")
+            .unwrap_or_else(|_| "1".to_string())
+            .parse::<u32>()
+            .unwrap_or(1);
+        let mut ws_clients = Vec::with_capacity(ws_connections as usize);
+        let mut db_pools = Vec::with_capacity(db_connections as usize);
+        // Initialize WebSocket clients and database connections
+        for _ in 0..ws_connections {
+            let ws_client = rpc::connect_rpc().await;
+            ws_clients.push(Arc::new(ws_client));
+        }
+
+        for _ in 0..db_connections {
+            let db_pool = db::connect_db().await;
+            db_pools.push(db_pool);
+        }
+
         // Connect to the WS RPC endpoint and database
         Indexer {
-            ws_client: Arc::new(rpc::connect_rpc().await),
-            db_pool: db::connect_db().await,
+            ws_clients,
+            db_pools,
         }
     }
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Init database
         // TODO: maybe move this
-        if let Err(e) = db::init_db(self.db_pool.clone()).await {
+        if let Err(e) = db::init_db(self.db_pools.get(0).unwrap().clone()).await {
             log_error!("Error initializing the database: {}", e);
         }
-        let last_block = get_latest_block(self.ws_client.clone()).await?;
+        let last_block = get_latest_block(self.ws_clients.get(0).unwrap().clone()).await?;
         // Use some env variables to set the start and end block
         // By default we will index all the blocks
         let start_block = U64::from(
@@ -52,8 +74,8 @@ impl Indexer {
         match index_blocks(
             start_block,
             end_block,
-            self.ws_client.clone(),
-            self.db_pool.clone(),
+            self.ws_clients.clone(),
+            self.db_pools.clone(),
         )
         .await
         {
@@ -67,19 +89,25 @@ impl Indexer {
     pub async fn run_live(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Init database
         // TODO: maybe move this
-        if let Err(e) = db::init_db(self.db_pool.clone()).await {
+        if let Err(e) = db::init_db(self.db_pools.get(0).unwrap().clone()).await {
             log_error!("Error initializing the database: {}", e);
         }
 
         // Index every new incoming block
         let mut tasks = vec![];
-        let mut subscription = self.ws_client.subscribe_blocks().await.unwrap();
+        let mut subscription = self
+            .ws_clients
+            .get(0)
+            .unwrap()
+            .subscribe_blocks()
+            .await
+            .unwrap();
         while let Some(block) = subscription.next().await {
             match block.number {
                 Some(block_number) => {
                     info!("New block: {}", block_number);
-                    let thd_ws_client = Arc::clone(&self.ws_client);
-                    let thd_db_pool = self.db_pool.clone(); // Clone the connection pool for each thread
+                    let thd_ws_client = Arc::clone(&self.ws_clients.get(0).unwrap());
+                    let thd_db_pool = self.db_pools.get(0).unwrap().clone(); // Clone the connection pool for each thread
                     let thd_block_number = block_number.clone();
                     // Index block
                     tasks.push(tokio::spawn(async move {
@@ -105,10 +133,10 @@ impl Indexer {
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Init database
         // TODO: maybe move this
-        if let Err(e) = db::init_db(self.db_pool.clone()).await {
+        if let Err(e) = db::init_db(self.db_pools.get(0).unwrap().clone()).await {
             log_error!("Error initializing the database: {}", e);
         }
-        let last_block = get_latest_block(self.ws_client.clone()).await?;
+        let last_block = get_latest_block(self.ws_clients.get(0).unwrap().clone()).await?;
         let start_block = U64::from(last_block.as_u64() - number_of_blocks);
         warn!(
             "Starting indexing from block {} to {}",
@@ -117,8 +145,8 @@ impl Indexer {
         match index_blocks(
             start_block,
             last_block,
-            self.ws_client.clone(),
-            self.db_pool.clone(),
+            self.ws_clients.clone(),
+            self.db_pools.clone(),
         )
         .await
         {
@@ -152,23 +180,24 @@ async fn get_latest_block(ws_client: Arc<Provider<Ws>>) -> Result<U64, Box<dyn E
 async fn index_blocks(
     start_block: U64,
     end_block: U64,
-    ws_client: Arc<Provider<Ws>>,
-    db_pool: Pool<PostgresConnectionManager<NoTls>>,
+    ws_clients: Vec<Arc<Provider<Ws>>>,
+    db_pools: Vec<Pool<PostgresConnectionManager<NoTls>>>,
 ) -> Result<(), String> {
-    let batch_size = U64::from(
-        env::var("BATCH_SIZE")
-            .unwrap_or_else(|_| "10".to_string())
-            .parse::<u64>()
-            .unwrap_or(10),
-    );
-
+    let max_concurrency: U64 = env::var("MAX_CONCURRENCY")
+        .unwrap_or_else(|_| "100".to_string())
+        .parse()
+        .unwrap_or(U64::from(100));
+    let semaphore = Arc::new(Semaphore::new(max_concurrency.as_u32() as usize));
     let mut batch_start = start_block;
-    let mut batch_end = batch_start + batch_size;
+    let mut batch_end = batch_start + max_concurrency;
 
     let total_blocks = end_block.as_u64() - start_block.as_u64();
     let mut blocks_processed = 0;
     let mut blocks_processed_total = 0;
     let mut start_time: Instant = Instant::now();
+
+    let ws_client_count = ws_clients.len();
+    let db_pool_count = db_pools.len();
 
     while batch_end <= end_block {
         // println!("Indexing blocks {} to {}", batch_start, batch_end);
@@ -176,15 +205,22 @@ async fn index_blocks(
         let mut tasks = vec![];
 
         for block_number in batch_start.as_u64()..batch_end.as_u64() {
+            // Acquire a permit before spawning a new task
+            let permit = semaphore.clone().acquire_owned().await.unwrap();
+
             //skip if block_number is > end_block
             if block_number > end_block.as_u64() {
                 continue;
             }
-            let thd_ws_client = Arc::clone(&ws_client);
-            let thd_db_pool = db_pool.clone(); // Clone the connection pool for each thread
+            let ws_client_index = block_number as usize % ws_client_count;
+            let db_pool_index = block_number as usize % db_pool_count;
+
+            let thd_ws_client = Arc::clone(&ws_clients.get(ws_client_index).unwrap());
+            let thd_db_pool = db_pools.get(db_pool_index).unwrap().clone(); // Clone the connection pool for each thread
             let thd_block_number = block_number.clone();
 
             tasks.push(tokio::spawn(async move {
+                let _permit = permit; // Ensure permit is held until task is done.
                 index_block(U64::from(thd_block_number), thd_ws_client, thd_db_pool).await
             }));
         }
@@ -195,12 +231,12 @@ async fn index_blocks(
             }
         }
 
-        batch_start += batch_size;
-        batch_end += batch_size;
+        batch_start += max_concurrency;
+        batch_end += max_concurrency;
 
         // Calculate stats and log it every 10 seconds
-        blocks_processed += batch_size.as_u64();
-        blocks_processed_total += batch_size.as_u64();
+        blocks_processed += max_concurrency.as_u64();
+        blocks_processed_total += max_concurrency.as_u64();
         let elapsed_time = start_time.elapsed();
         if elapsed_time >= Duration::new(5, 0) {
             let progress = blocks_processed_total as f64 / total_blocks as f64 * 100.0;
@@ -239,8 +275,12 @@ async fn index_blocks(
             if block_number > end_block.as_u64() {
                 continue;
             }
-            let thd_ws_client = Arc::clone(&ws_client);
-            let thd_db_pool = db_pool.clone(); // Clone the connection pool for each thread
+
+            let ws_client_index = block_number as usize % ws_client_count;
+            let db_pool_index = block_number as usize % db_pool_count;
+
+            let thd_ws_client = Arc::clone(&ws_clients.get(ws_client_index).unwrap());
+            let thd_db_pool = db_pools.get(db_pool_index).unwrap().clone(); // Clone the connection pool for each thread
             let thd_block_number = block_number.clone();
 
             tasks.push(tokio::spawn(async move {
@@ -270,7 +310,10 @@ async fn index_block(
         Ok(Some(block)) => {
             // Index block
             if let Err(e) = db::insert_block(block.clone(), db_pool.to_owned()).await {
-                let error_message = format!("Error inserting block into database: {:?}", e);
+                let error_message = format!(
+                    "Error inserting block #{} into database: {:?}",
+                    block_number, e
+                );
                 log_error!("{}", error_message);
                 return Err(error_message); // Return the error message
             }
@@ -281,7 +324,11 @@ async fn index_block(
                 let thd_db_pool = db_pool.clone(); // Clone the connection pool for each thread
 
                 if let Err(e) = index_transaction(transaction_hash, ws_client, &thd_db_pool).await {
-                    let error_message = format!("Error indexing transactions: {:?}", e);
+                    let error_message = format!(
+                        "Error indexing transaction #{}: {:?}",
+                        format!("0x{:x}", transaction_hash),
+                        e
+                    );
                     log_error!("{}", error_message);
                 }
             }

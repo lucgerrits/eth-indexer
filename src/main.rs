@@ -35,10 +35,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "index_all" => {
                 warn!("Starting indexer");
                 let indexer = Indexer::new().await;
+                warn!("MODE: index_all");
                 indexer.run().await?;
             }
             "index_live" => {
                 warn!("Starting live indexer");
+                warn!("MODE: index_live");
                 let indexer = Indexer::new().await;
 
                 // Register a signal handler for CTRL+C (SIGINT)
@@ -66,6 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 warn!("Starting indexer");
                 let indexer = Indexer::new().await;
                 let number_of_blocks: u64 = args[2].parse().unwrap();
+                warn!("{}", format!("MODE: index_last {}", number_of_blocks));
                 indexer.run_last_blocks(number_of_blocks).await?;
             }
             "index_last_hours" => {
@@ -75,8 +78,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 //there is on average 1 block every 6 seconds = 1/6 blocks per second
                 // 1 hour = 3600 seconds
                 // 3600 * 1/6 = 600 blocks per hour
-                let number_of_blocks: u64 = args[2].parse().unwrap();
-                indexer.run_last_blocks(number_of_blocks * 600).await?;
+                let number_of_hours: u64 = args[2].parse().unwrap();
+                warn!("{}", format!("MODE: index_last_hours {}", number_of_hours));
+                indexer.run_last_blocks(number_of_hours * 600).await?;
+            }
+            "index_last_days" => {
+                warn!("Starting indexer");
+                let indexer = Indexer::new().await;
+                //calculate the number of blocks in the last x hours
+                //there is on average 1 block every 6 seconds = 1/6 blocks per second
+                // 1 hour = 3600 seconds
+                // 3600 * 1/6 = 600 blocks per hour
+                // 1 day = 24 hours
+                let number_of_days: u64 = args[2].parse().unwrap();
+                warn!("{}", format!("MODE: index_last_days {}", number_of_days));
+                indexer.run_last_blocks(number_of_days * 24 * 600).await?;
             }
             _ => {
                 println!("'{}' is not a valid argument", args[1]);
@@ -92,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn help() {
-    println!("\nUsage: eth-indexer [index_all|index_live|help|index_last <NB_BLOCKS>]\n");
+    println!("\nUsage: eth-indexer [index_all|index_live|help|index_last <NB_BLOCKS>|index_last_hours <NB_HOURS>]\n");
     let version = env!("CARGO_PKG_VERSION");
     println!("eth-indexer v{}", version);
 }
@@ -139,7 +155,10 @@ fn check_env() {
         "POSTGRES_PASSWORD",
         "POSTGRES_DATABASE",
         "POSTGRES_CREATE_TABLE_ORDER",
-        "BATCH_SIZE",
+        "NB_OF_WS_CONNECTIONS",
+        "NB_OF_DB_CONNECTIONS",
+        "START_BLOCK",
+        "END_BLOCK",
         "LOG_LEVEL",
     ];
 
