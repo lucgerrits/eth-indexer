@@ -116,7 +116,7 @@ async fn get_erc20_token_data(
             U256::zero()
         }
     };
-    token_data.totalSupply = Decimal::from_str(total_supply.to_string().as_str()).unwrap();
+    token_data.totalSupply = Decimal::from(total_supply.as_u128() as i64);
     // Call the name function
     let name: String = match contract.method("name", ()) {
         Ok(method) => method.call().await?,
@@ -181,7 +181,7 @@ pub async fn insert_erc20_transfer(
     let block_hash = format!("0x{:x}", log.block_hash.unwrap());
     let block_number = log.block_number.unwrap().as_u64() as i64;
     let log_index = log.log_index.unwrap().as_u64() as i32;
-    let amount = Decimal::from_str(decoded_log.value.to_string().as_str()).unwrap();
+    let amount = Decimal::from(decoded_log.value.as_u128() as i64);
 
     // Build the SQL query
     let query = r#"

@@ -21,7 +21,7 @@ mod contracts;
 pub use contracts::*;
 
 mod tokens;
-pub use tokens::*;
+// pub use tokens::*;
 
 mod logs;
 pub use logs::*;
@@ -33,11 +33,13 @@ pub async fn connect_db() -> Pool<PostgresConnectionManager<NoTls>> {
     let user = env::var("POSTGRES_USER").unwrap();
     let password = env::var("POSTGRES_PASSWORD").unwrap();
     let port = env::var("POSTGRES_PORT").unwrap();
+    let connect_timeout = 60;
+    let tcp_user_timeout = 60;
     let url: String = format!(
-        "host={} port={} user={} password={}",
-        host, port, user, password
+        "host={} port={} user={} password={} connect_timeout={} tcp_user_timeout={}",
+        host, port, user, password, connect_timeout, tcp_user_timeout
     );
-    let url_with_db: String = format!("{} dbname={}", url, database);
+    let url_with_db: String = format!("{} dbname={} connect_timeout={} tcp_user_timeout={}", url, database, connect_timeout, tcp_user_timeout);
     // Check if the database exists
     let database_exists = check_database_exists(&url, &database).await;
 

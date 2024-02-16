@@ -2,7 +2,7 @@
 
 ## Configuration
 
-Use the .env file to configure the indexer.
+Use the .env file to configure the indexer and the `ETH_INDEXER=.env` variable.
 
 
 ## Run program

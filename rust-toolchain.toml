@@ -1,0 +1,3 @@
+# rust toolchain file
+[toolchain]
+channel = "nightly"

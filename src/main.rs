@@ -108,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn help() {
-    println!("\nUsage: eth-indexer [index_all|index_live|help|index_last <NB_BLOCKS>|index_last_hours <NB_HOURS>]\n");
+    println!("\nUsage: eth-indexer [index_all|index_live|help|index_last <NB_BLOCKS>|index_last_hours <NB_HOURS>|index_last_days <NB_DAYS>]\n");
     let version = env!("CARGO_PKG_VERSION");
     println!("eth-indexer v{}", version);
 }
