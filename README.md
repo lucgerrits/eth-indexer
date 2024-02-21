@@ -2,7 +2,7 @@
 
 ## Configuration
 
-Use the .env file to configure the indexer and the `ETH_INDEXER=.env` variable.
+Use the .env file to configure the indexer and the `ETH_INDEXER` variable.
 
 
 ## Run program
@@ -10,6 +10,8 @@ Use the .env file to configure the indexer and the `ETH_INDEXER=.env` variable.
 Run:
 ```bash
 cargo run
+# or use the environment variable .env.luc like this:
+ETH_INDEXER=luc cargo run -- -h
 ```
 
 
