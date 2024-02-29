@@ -4,13 +4,13 @@ deploy_dev:
     script:
     - export KUBE_CONFIG_DATA=${KUBE_CONFIG_DATA_DEV}
 
-    - kompaas project create blockchain-dev
+    - kompaas project create web3
      # Deploy eth-indexer
     - kompaas chart create -l helm eth-indexer eth-indexer
     - kompaas value update image.tag ${CI_PIPELINE_ID}
     - kompaas project render
-    - kompaas project deploy -n blockchain-dev
-    - kompaas project delete blockchain-dev
+    - kompaas project deploy -n web3
+    - kompaas project delete web3
     
 
     tags:
