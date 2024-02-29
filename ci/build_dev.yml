@@ -19,5 +19,5 @@ build_image:
     - docker
     except:
     - tags
-    when: manual
+    # when: manual
     
