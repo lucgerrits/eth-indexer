@@ -24,7 +24,7 @@ fn connect_blockscout() -> (String, String, Client) {
 pub async fn get_verified_sc_data(address: String) -> indexer_types::ContractInfo {
     let (blockscout_endpoint, blockscout_api_key, client) = connect_blockscout();
     let url = format!(
-        "{}/api?module=contract&action=getsourcecode&address={}&apikey={}",
+        "{}/api/v2/smart-contracts/{}&apikey={}",
         blockscout_endpoint, address, blockscout_api_key
     );
     let response = client.get(url).send().await.unwrap();
