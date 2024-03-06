@@ -31,6 +31,9 @@ pub async fn get_verified_sc_data(address: String) -> indexer_types::ContractInf
     // check response code is 200
     if response.status().is_client_error() {
         debug!("No verified source code found for {}", address);
+        if response.status().as_u16() == 404 {
+            return indexer_types::ContractInfo::new();
+        }
         // print response status and returned response
         println!("Response: {:?}", response);
         return indexer_types::ContractInfo::new();
