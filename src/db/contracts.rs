@@ -7,7 +7,7 @@ use crate::{
 use bb8::Pool;
 use bb8_postgres::PostgresConnectionManager;
 use ethers::prelude::*;
-use log::{debug, error as log_error};
+use log::{debug, warn, error as log_error};
 use serde_json;
 use std::{error::Error, sync::Arc};
 use tokio_postgres::{types::ToSql, NoTls};
@@ -197,14 +197,20 @@ pub async fn insert_smart_contract(
                     //trick to process logs from constructor, that seems to not show up in the receipts logs
                     let filter_by_block =
                         Filter::new().from_block(transaction_receipt.block_number.unwrap());
-                    let constructor_logs: Vec<Log> = ws_client.get_logs(&filter_by_block).await?;
+                    let constructor_logs: Vec<Log> = match  ws_client.get_logs(&filter_by_block).await {
+                        Ok(logs) => logs,
+                        Err(err) => {
+                            log_error!("Error getting logs for contract 0x{:x}: {}", transaction_receipt.contract_address.unwrap(), err);
+                            vec![]
+                        }
+                    };
 
                     for log in constructor_logs {
                         logs::insert_log(log, db_pool.clone(), ws_client.clone()).await?;
                     }
                 } else {
                     //TODO: Handle other contract types
-                    debug!("Contract type is not supported yet");
+                    warn!("Contract type '{}' is not supported yet", contract_type.to_string());
                 }
             }
             Ok(())

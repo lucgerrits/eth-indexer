@@ -6,7 +6,7 @@ use bb8_postgres::PostgresConnectionManager;
 use ethers::utils::keccak256;
 use ethers::{abi::Abi, prelude::*};
 use ethers_contract::Contract;
-use log::{debug, error as log_error};
+use log::{debug, error as log_error, warn};
 use std::{error::Error, sync::Arc};
 use tokio_postgres::{types::ToSql, NoTls};
 
@@ -121,8 +121,8 @@ pub async fn insert_log(
         match db::get_abi_by_address(address.clone(), db_pool.clone()).await {
             Ok(abi) => abi,
             Err(e) => {
-                // if error is "abi is null" then return ok
-                if e.to_string() == "abi is null" {
+                // if error is "No ABI" then return ok
+                if e.to_string() == "No ABI" {
                     return Ok(());
                 }
                 return Err(e);
@@ -131,8 +131,7 @@ pub async fn insert_log(
     debug!("ABI found for address: {}", address);
 
     // Parse the JSON ABI
-    let contract_abi: Abi =
-        serde_json::from_str(abi.as_str().unwrap_or("[]")).expect("Failed to parse ABI");
+    let contract_abi: Abi = serde_json::from_value(abi.clone()).expect("Failed to parse ABI");
     let contract = Contract::new(
         log.clone().address.clone(),
         contract_abi,
@@ -145,7 +144,7 @@ pub async fn insert_log(
             // Compute the hash of the "Transfer" event signature.
             let transfer_signature_hash =
                 H256::from(keccak256("Transfer(address,address,uint256)".as_bytes()));
-
+            debug!("Transfer signature hash: {}", transfer_signature_hash);
             // Check if the log is a Transfer event
             if let Some(topic) = log.clone().topics.get(0) {
                 if *topic == transfer_signature_hash {
@@ -185,9 +184,12 @@ pub async fn insert_log(
                 }
             }
         }
+        indexer_types::ContractType::Unknown => {
+            debug!("Contract type is unknown");
+        }
         _ => {
             //TODO: Handle other contract types
-            debug!("Contract type is not supported yet");
+            warn!("Contract type '{}' is not supported yet", contract_type.to_string());
         }
     }
     Ok(())

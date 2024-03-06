@@ -522,7 +522,7 @@ async fn index_address(
     )
     .await
     {
-        let error_message = format!("Error indexing transactions: {:?}", e);
+        let error_message = format!("Error indexing address 0x{:x}: {:?}", address, e);
         log_error!("{}", error_message);
     }
     Ok(())
@@ -561,7 +561,7 @@ async fn index_smart_contract(
 
     // Insert the address into the database
     if let Err(e) = db::insert_smart_contract(
-        transaction_receipt,
+        transaction_receipt.clone(),
         code,
         verified_sc_data,
         db_pool.clone(),
@@ -569,7 +569,7 @@ async fn index_smart_contract(
     )
     .await
     {
-        let error_message = format!("Error indexing transactions: {:?}", e);
+        let error_message = format!("Error indexing smart contract 0x{:x}: {:?}", transaction_receipt.contract_address.unwrap_or(H160::zero()), e);
         log_error!("{}", error_message);
     }
     Ok(())

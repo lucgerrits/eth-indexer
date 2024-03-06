@@ -11,7 +11,7 @@ pub enum ContractType {
     ERC20,
     ERC721,
     // ERC777,
-    // ERC1155,
+    ERC1155,
 }
 impl ContractType {
     pub fn to_string(&self) -> String {
@@ -20,7 +20,7 @@ impl ContractType {
             ContractType::ERC20 => String::from("ERC20"),
             ContractType::ERC721 => String::from("ERC721"),
             // ContractType::ERC777 => String::from("ERC777"),
-            // ContractType::ERC1155 => String::from("ERC1155"),
+            ContractType::ERC1155 => String::from("ERC1155"),
         }
     }
     pub fn detect_contract_type(abi_json: serde_json::Value) -> ContractType {
@@ -29,19 +29,20 @@ impl ContractType {
             return contract_type;
         }
 
-        let abi_str = abi_json.as_str().expect("ABI is not a string");
-        let parsed_abi: serde_json::Value =
-            serde_json::from_str(&abi_str).expect("Failed to parse ABI JSON");
+        // let abi_str = abi_json.as_str().expect("ABI is not a string");
+        // let parsed_abi: serde_json::Value =
+        //     serde_json::from_str(&abi_str).expect("Failed to parse ABI JSON");
 
         // Check for ERC-20 functions
         let erc20_functions = vec!["totalSupply", "balanceOf", "transfer"];
         let erc721_events = vec!["Transfer"];
+        let erc1155_events = vec!["TransferSingle", "TransferBatch"];
 
-        fn all_names_found(parsed_abi: &serde_json::Value, names_to_check: &[&str]) -> bool {
+        fn all_names_found(json_obj: &serde_json::Value, names_to_check: &[&str]) -> bool {
             let mut found_names = Vec::new();
 
             // Iterate over the array and check "name" fields
-            if let Some(abi_array) = parsed_abi.as_array() {
+            if let Some(abi_array) = json_obj.as_array() {
                 for abi_object in abi_array {
                     if let Some(obj_type) = abi_object["type"].as_str() {
                         if obj_type == "function" {
@@ -60,12 +61,16 @@ impl ContractType {
         }
 
         // Check if all ERC-20 functions are found
-        if all_names_found(&parsed_abi, &erc20_functions) {
+        if all_names_found(&abi_json, &erc20_functions) {
             contract_type = ContractType::ERC20;
         }
         // Check if all ERC-721 events are found
-        else if all_names_found(&parsed_abi, &erc721_events) {
+        else if all_names_found(&abi_json, &erc721_events) {
             contract_type = ContractType::ERC721;
+        }
+        // Check if all ERC-721 events are found
+        else if all_names_found(&abi_json, &erc1155_events) {
+            contract_type = ContractType::ERC1155;
         }
 
         contract_type
@@ -109,18 +114,18 @@ impl ContractInfo {
     }
     pub fn is_null(&self) -> bool {
         self.contractType.is_empty()
-            && self.abi.is_empty()
-            && self.abi_json.is_null()
-            && self.additionalSources.is_empty()
-            && self.compilerSettings.is_empty()
-            && self.compilerVersion.is_empty()
-            && self.constructorArguments.is_empty()
-            && self.contractName.is_empty()
-            && self.EVMVersion.is_empty()
-            && self.fileName.is_empty()
-            && !self.isProxy
-            && !self.optimizationUsed
-            && self.sourceCode.is_empty()
+            || self.abi.is_empty()
+            // && self.abi_json.is_null()
+            // && self.additionalSources.is_empty()
+            // && self.compilerSettings.is_empty()
+            // && self.compilerVersion.is_empty()
+            // && self.constructorArguments.is_empty()
+            // && self.contractName.is_empty()
+            // && self.EVMVersion.is_empty()
+            // && self.fileName.is_empty()
+            // && !self.isProxy
+            // && !self.optimizationUsed
+            // && self.sourceCode.is_empty()
     }
 }
 impl fmt::Display for ContractInfo {

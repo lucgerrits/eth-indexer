@@ -6,7 +6,9 @@ use log::info;
 /// Returns a client
 pub async fn connect_rpc() -> Provider<Ws> {
     let ws_endpoint = env::var("WS_RPC_ENDPOINT").unwrap();
-    let client: Provider<Ws> = match Provider::<Ws>::connect(ws_endpoint.as_str()).await {
+    let client: Provider<Ws> = match Provider::<Ws>::connect_with_reconnects(ws_endpoint.as_str(), 10)
+        .await
+    {
         Ok(client) => client,
         Err(e) => panic!("Error connecting to RPC endpoint: {}", e),
     };

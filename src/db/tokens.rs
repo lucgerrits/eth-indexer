@@ -103,7 +103,7 @@ async fn get_erc20_token_data(
     let mut token_data = indexer_types::TokenInfo::new();
     // Parse the JSON ABI
     let contract_abi: Abi =
-        serde_json::from_str(verified_sc_data.abi_json.as_str().unwrap_or("[]"))
+        serde_json::from_value(verified_sc_data.abi_json)
             .expect("Failed to parse ABI");
     // Create a new Contract instance
     let contract = Contract::new(address, contract_abi, ws_client);
@@ -112,7 +112,7 @@ async fn get_erc20_token_data(
     let total_supply: U256 = match contract.method("totalSupply", ()) {
         Ok(method) => method.call().await?,
         Err(e) => {
-            log_error!("Error: {}", e);
+            log_error!("Error: {} for 0x{:x}", e, address);
             U256::zero()
         }
     };
@@ -121,7 +121,7 @@ async fn get_erc20_token_data(
     let name: String = match contract.method("name", ()) {
         Ok(method) => method.call().await?,
         Err(e) => {
-            log_error!("Error: {}", e);
+            log_error!("Error: {} for 0x{:x}", e, address);
             String::from("")
         }
     };
@@ -130,7 +130,7 @@ async fn get_erc20_token_data(
     let symbol: String = match contract.method("symbol", ()) {
         Ok(method) => method.call().await?,
         Err(e) => {
-            log_error!("Error: {}", e);
+            log_error!("Error: {} for 0x{:x}", e, address);
             String::from("")
         }
     };
@@ -139,7 +139,7 @@ async fn get_erc20_token_data(
     let decimals: U256 = match contract.method("decimals", ()) {
         Ok(method) => method.call().await?,
         Err(e) => {
-            log_error!("Error: {}", e);
+            log_error!("Error: {} for 0x{:x}", e, address);
             U256::zero()
         }
     };
